@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { RequestLogger, CardSkeleton, SegmentedControl } from "@/shared/components";
 import UsageStats from "@/shared/components/UsageStats";
 import RequestDetailsTab from "./components/RequestDetailsTab";
+import ApiKeyLimitsCard from "./components/ApiKeyLimitsCard";
 
 const PERIODS = [
   { value: "today", label: "Today" },
@@ -70,6 +71,7 @@ function UsageContent() {
           <UsageStats period={period} setPeriod={setPeriod} hidePeriodSelector />
         </Suspense>
       )}
+      {activeTab === "overview" && <ApiKeyLimitsCard />}
       {activeTab === "logs" && <RequestLogger />}
       {activeTab === "details" && <RequestDetailsTab />}
     </div>
