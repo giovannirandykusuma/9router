@@ -6,6 +6,7 @@ import {
   isValidApiKey,
 } from "../services/auth.js";
 import { getSettings, getProviderConnectionById } from "@/lib/localDb";
+import { enforceApiKeyLimits } from "@/lib/apiKeyLimits.js";
 import { getModelInfo } from "../services/model.js";
 import { getKeyAccessContext, enforceKeyAccessResolved } from "../services/keyAccess.js";
 import { handleVideoProxyCore, getVideoConfig, sanitizeSecrets } from "open-sse/handlers/videoCore.js";
@@ -50,7 +51,7 @@ async function requireValidApiKey(request) {
     const valid = await isValidApiKey(apiKey);
     if (!valid) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
   }
-  return null;
+  return enforceApiKeyLimits(apiKey);
 }
 
 /**

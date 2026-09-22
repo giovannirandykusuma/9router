@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { deleteApiKey, getApiKeyById, updateApiKey } from "@/lib/localDb";
 import { validateKeyAccessInput } from "@/shared/utils/keyAccess.js";
+import { API_KEY_LIMIT_FIELDS } from "@/lib/db/index.js";
+import { invalidateApiKeyLimitCache } from "@/lib/apiKeyLimits.js";
 
 // GET /api/keys/[id] - Get single key
 export async function GET(request, { params }) {
@@ -22,7 +24,7 @@ export async function PUT(request, { params }) {
   try {
     const { id } = await params;
     const body = await request.json();
-    const { isActive, access } = body;
+    const { isActive, access, name } = body;
 
     const existing = await getApiKeyById(id);
     if (!existing) {
@@ -31,6 +33,10 @@ export async function PUT(request, { params }) {
 
     const updateData = {};
     if (isActive !== undefined) updateData.isActive = isActive;
+    if (typeof name === "string" && name.trim()) updateData.name = name.trim();
+    for (const { name: field } of API_KEY_LIMIT_FIELDS) {
+      if (body[field] !== undefined) updateData[field] = body[field];
+    }
     if (access !== undefined) {
       const checked = validateKeyAccessInput(access);
       if (!checked.ok) return NextResponse.json({ error: checked.error }, { status: 400 });
@@ -38,6 +44,7 @@ export async function PUT(request, { params }) {
     }
 
     const updated = await updateApiKey(id, updateData);
+    invalidateApiKeyLimitCache(existing.key);
 
     return NextResponse.json({ key: updated });
   } catch (error) {
@@ -51,7 +58,9 @@ export async function DELETE(request, { params }) {
   try {
     const { id } = await params;
 
+    const existing = await getApiKeyById(id);
     const deleted = await deleteApiKey(id);
+    if (existing) invalidateApiKeyLimitCache(existing.key);
     if (!deleted) {
       return NextResponse.json({ error: "Key not found" }, { status: 404 });
     }

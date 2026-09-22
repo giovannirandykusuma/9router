@@ -6,6 +6,7 @@ import {
   isValidApiKey,
 } from "../services/auth.js";
 import { getSettings } from "@/lib/localDb";
+import { enforceApiKeyLimits } from "@/lib/apiKeyLimits.js";
 import { getModelInfo } from "../services/model.js";
 import { getKeyAccessContext, enforceKeyAccessResolved } from "../services/keyAccess.js";
 import { handleEmbeddingsCore } from "open-sse/handlers/embeddingsCore.js";
@@ -65,6 +66,9 @@ export async function handleEmbeddings(request) {
       return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
     }
   }
+
+  const limitResponse = await enforceApiKeyLimits(apiKey);
+  if (limitResponse) return limitResponse;
 
   if (!modelStr) {
     log.warn("EMBEDDINGS", "Missing model");
