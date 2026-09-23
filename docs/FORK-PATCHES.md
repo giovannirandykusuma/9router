@@ -25,7 +25,9 @@ sh scripts/test-oauth-fork.sh
 npm run build
 ```
 
-The focused test runner is pinned to Vitest 4.1.11. Tests use synthetic credentials and streams, not live provider accounts. See the release notes for actual executed checks. No benchmark or model-quality improvement is guaranteed.
+The focused test runner is pinned to Vitest 4.1.11. Tests use synthetic credentials and streams, not live provider accounts. Initial unfiltered verification: **184 passed, 1 failed**. The one failure, `GLM-5.2 also gets reasoning_effort (supported from 5.2 onward)`, reproduces identically on pristine v0.5.86 (64 passed, 1 failed in that upstream file). It is not modified or hidden; the OAuth deployment gate explicitly excludes only this unrelated baseline case. No benchmark or model-quality improvement is guaranteed.
+
+Optional Docker build arguments `CLAUDE_CLI_VERSION` and `CODEX_CLI_VERSION` override the upstream constants at build time. Record the exact Git commit, versions, and image ID for each deployment.
 
 ## Operational notes
 
