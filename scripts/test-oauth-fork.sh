@@ -17,5 +17,7 @@ npx --no-install vitest run \
   unit/cachefix-regression.test.js \
   unit/claude-stream-cache-usage.test.js \
   unit/cached-token-usage.test.js \
+  unit/model-context-overrides.test.js \
+  unit/model-context-api.test.js \
   --testNamePattern='^(?!.*GLM-5\.2 also gets reasoning_effort \(supported from 5\.2 onward\)).*$' \
   --maxWorkers=2

@@ -15,6 +15,7 @@ This branch is based on upstream **v0.5.86** (`39e36d3d`). It is an independentl
 | [#2667](https://github.com/decolua/9router/pull/2667) | One same-account retry for specifically rejected encrypted reasoning history. |
 | [#4278](https://github.com/decolua/9router/pull/4278) | Preserve Pi model limits, metadata, and custom provider settings. |
 | [#3556](https://github.com/decolua/9router/pull/3556) | Adapted first-byte watchdog with lifecycle tests. **Keeps the existing 200-second prefill deadline**, not the proposed 30 seconds. Clears timers on EOF/cancel and only switches to stall timing after nonempty bytes. |
+| [#3595](https://github.com/decolua/9router/pull/3595) | Model-context dashboard, persisted exact provider/model overrides, capability propagation, validation, and reset-to-current-default semantics. **Excludes glob/global overrides and all unrelated compatibility, statistics, schema, and retry changes.** |
 
 ## Verification
 
@@ -32,6 +33,7 @@ Optional Docker build arguments `CLAUDE_CLI_VERSION` and `CODEX_CLI_VERSION` ove
 ## Operational notes
 
 - Cache affinity is opt-in via `providerStrategies.<provider>.fallbackStrategy = "cache-affinity"` or the dashboard. It is routing affinity, not storage of prompts. Existing fill-first behavior is unchanged unless enabled.
+- Model-context overrides are exact canonical `provider/model` keys and alter only total context metadata. They do not alter `maxOutput`; reset deletes the override so future registered defaults remain authoritative.
 - Stable explicit `prompt_cache_key` values are preferred. Without one, request-prefix changes (including compaction) can change account selection. Native Responses bodies without a key are not covered by the prefix fallback in this version.
 - Higher reasoning effort may cost more and take longer. Model capabilities must be checked against the actual upstream account/model.
 - The first-byte watchdog runs in stream piping; it does not add a deadline to every executor's pre-stream work. Existing fetch and provider-specific timeouts remain relevant.

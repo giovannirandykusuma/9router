@@ -34,6 +34,7 @@
 
 import { matchPattern } from "./pricing.js";
 import { looksLikeVisionModel } from "./visionPatterns.js";
+import { resolveProviderAlias } from "../services/model.js";
 
 /**
  * Safe floor — every resolved result is merged over this so consumers
@@ -559,7 +560,45 @@ function isCommandCodeTextOnly(model) {
   }
   return false;
 }
-export function getCapabilitiesForModel(provider, model) {
+const CONTEXT_OVERRIDES_KEY = "__9ROUTER_CTX_WINDOW_OVERRIDES__";
+
+function getContextOverridesMap() {
+  const existing = globalThis[CONTEXT_OVERRIDES_KEY];
+  if (existing instanceof Map) return existing;
+  const fresh = new Map();
+  globalThis[CONTEXT_OVERRIDES_KEY] = fresh;
+  return fresh;
+}
+
+// The app persists this map in SQLite and reloads it at boot and after edits.
+// Keys are deliberately exact provider/model pairs: changing one provider must
+// never affect another provider that happens to expose the same model id.
+export function setContextWindowOverrides(overrides) {
+  globalThis[CONTEXT_OVERRIDES_KEY] = overrides instanceof Map
+    ? new Map(overrides)
+    : new Map(Object.entries(overrides || {}));
+}
+
+export function getContextWindowOverrides() {
+  return Object.fromEntries(getContextOverridesMap());
+}
+
+function applyContextWindowOverride(caps, provider, model) {
+  if (!provider || !model) return caps;
+  const canonicalProvider = resolveProviderAlias(provider);
+  const key = `${canonicalProvider}/${model}`;
+  const value = getContextOverridesMap().get(key);
+  return Number.isSafeInteger(value) && value > 0
+    ? { ...caps, contextWindow: value }
+    : caps;
+}
+
+/** Resolve registered/catalog capabilities without user overrides. */
+export function getStaticCapabilitiesForModel(provider, model) {
+  return resolveCapabilitiesForModel(provider, model);
+}
+
+function resolveCapabilitiesForModel(provider, model) {
   if (!model) return { ...DEFAULT_CAPABILITIES };
 
   // Canonical exact lookup strips vendor prefix: "anthropic/claude-opus-4.7" -> "claude-opus-4.7".
@@ -602,4 +641,13 @@ export function getCapabilitiesForModel(provider, model) {
 
   // 4. Floor
   return refine(null, provider, model);
+}
+
+/** Resolve registered capabilities and then apply an exact persisted override. */
+export function getCapabilitiesForModel(provider, model) {
+  return applyContextWindowOverride(
+    resolveCapabilitiesForModel(provider, model),
+    provider,
+    model,
+  );
 }

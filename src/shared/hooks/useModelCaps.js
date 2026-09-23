@@ -6,6 +6,7 @@ import { getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
 // Module cache: one /api/models fetch shared by every useModelCaps instance.
 let cache = null; // { byFull, byId } | null
 let inflight = null;
+let generation = 0;
 
 function buildMaps(models) {
   const byFull = {};
@@ -22,12 +23,14 @@ function buildMaps(models) {
 function loadModelCaps() {
   if (cache) return Promise.resolve(cache);
   if (inflight) return inflight;
+  const requestedGeneration = generation;
   inflight = fetch("/api/models")
     .then(async (res) => {
       if (!res.ok) throw new Error(`models ${res.status}`);
       const data = await res.json();
-      cache = buildMaps(data.models);
-      return cache;
+      const maps = buildMaps(data.models);
+      if (requestedGeneration === generation) cache = maps;
+      return maps;
     })
     .catch(() => {
       // Keep null so a later mount can retry
@@ -35,6 +38,15 @@ function loadModelCaps() {
     })
     .finally(() => { inflight = null; });
   return inflight;
+}
+
+export function invalidateModelCaps() {
+  cache = null;
+  inflight = null;
+  generation += 1;
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("modelContextChanged"));
+  }
 }
 
 // Resolve caps from a "provider/model" string or a bare model id.
@@ -74,9 +86,11 @@ export function useModelCaps() {
       loadModelCaps().then(sync);
     };
     window.addEventListener("customModelChanged", invalidate);
+    window.addEventListener("modelContextChanged", invalidate);
     return () => {
       alive = false;
       window.removeEventListener("customModelChanged", invalidate);
+      window.removeEventListener("modelContextChanged", invalidate);
     };
   }, []);
 

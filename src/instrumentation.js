@@ -10,5 +10,17 @@ export async function register() {
 
     const { startModelCatalogSync } = await import("@/lib/modelCatalog/sync.js");
     startModelCatalogSync();
+
+    // Hydrate persisted model-context overrides before model metadata is served.
+    try {
+      const [{ getSettings }, { setContextWindowOverrides }] = await Promise.all([
+        import("@/lib/db/repos/settingsRepo.js"),
+        import("open-sse/providers/capabilities.js"),
+      ]);
+      const settings = await getSettings();
+      setContextWindowOverrides(settings.contextWindowOverrides || {});
+    } catch (error) {
+      console.warn("[model-context] Unable to load overrides:", error?.message);
+    }
   }
 }

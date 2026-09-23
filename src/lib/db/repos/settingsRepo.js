@@ -58,6 +58,9 @@ const DEFAULT_SETTINGS = {
   cavemanLevel: "full",
   ponytailEnabled: false,
   ponytailLevel: "full",
+  // Exact canonical provider/model keys mapped to total context-window tokens.
+  // The model-context API writes the entire map so reset can truly delete keys.
+  contextWindowOverrides: {},
   pxpipeEnabled: false,
   pxpipeAutoInstall: true,
   pxpipeMinChars: 25000,
@@ -118,6 +121,26 @@ export async function updateSettings(updates) {
     );
   });
   return mergeWithDefaults(next);
+}
+
+// Atomically replace selected context overrides without losing concurrent settings writes.
+export async function updateContextWindowOverrides({ set = [], deleteKeys = [] }) {
+  const db = await getAdapter();
+  let nextOverrides;
+  db.transaction(function () {
+    const row = db.get(`SELECT data FROM settings WHERE id = 1`);
+    const current = row ? parseJson(row.data, {}) : {};
+    const overrides = { ...(current.contextWindowOverrides || {}) };
+    for (const { key, contextWindow } of set) overrides[key] = contextWindow;
+    for (const key of deleteKeys) delete overrides[key];
+    current.contextWindowOverrides = overrides;
+    db.run(
+      `INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`,
+      [stringifyJson(current)],
+    );
+    nextOverrides = overrides;
+  });
+  return nextOverrides;
 }
 
 export async function isCloudEnabled() {
