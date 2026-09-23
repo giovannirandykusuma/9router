@@ -17,23 +17,24 @@ describe('cache affinity credential selection', () => {
     const first = await getProviderCredentials('codex', null, 'gpt-test', { cacheKey: 'session-1' });
     await getProviderCredentials('codex', null, 'gpt-test', { cacheKey: 'session-2' });
     db.getProviderConnections.mockResolvedValue([...conns].reverse());
-    expect((await getProviderCredentials('codex', null, 'gpt-test', { cacheKey: 'session-1' })).id).toBe(first.id);
+    expect(first.connectionId).toBeTruthy();
+    expect((await getProviderCredentials('codex', null, 'gpt-test', { cacheKey: 'session-1' })).connectionId).toBe(first.connectionId);
   });
   it('excludes a failed preferred account without disabling fallback', async () => {
     const picked = pickByCacheAffinity('session-1', conns);
     const next = await getProviderCredentials('codex', new Set([picked.id]), 'gpt-test', { cacheKey: 'session-1' });
-    expect(next.id).not.toBe(picked.id);
+    expect(next.connectionId).toBe(conns.find(c => c.id !== picked.id).id);
   });
   it('does not select model-locked accounts', async () => {
     const picked = pickByCacheAffinity('session-1', conns);
     db.getProviderConnections.mockResolvedValue(conns.map(c => ({ ...c, ...(c.id === picked.id ? { 'modelLock_gpt-test': new Date(Date.now()+60000).toISOString() } : {}) })));
-    expect((await getProviderCredentials('codex', null, 'gpt-test', { cacheKey: 'session-1' })).id).not.toBe(picked.id);
+    expect((await getProviderCredentials('codex', null, 'gpt-test', { cacheKey: 'session-1' })).connectionId).toBe(conns.find(c => c.id !== picked.id).id);
   });
   it('honors an explicit available preferred connection', async () => {
-    expect((await getProviderCredentials('codex', null, 'gpt-test', { cacheKey: 'session-1', preferredConnectionId: 'test-b' })).id).toBe('test-b');
+    expect((await getProviderCredentials('codex', null, 'gpt-test', { cacheKey: 'session-1', preferredConnectionId: 'test-b' })).connectionId).toBe('test-b');
   });
   it('uses fill-first when no stable key is available', async () => {
-    expect((await getProviderCredentials('codex', null, 'gpt-test')).id).toBe('test-a');
+    expect((await getProviderCredentials('codex', null, 'gpt-test')).connectionId).toBe('test-a');
   });
   it('returns null when all candidates have failed', async () => {
     expect(await getProviderCredentials('codex', new Set(['test-a', 'test-b']), 'gpt-test', { cacheKey: 'session-1' })).toBeNull();
