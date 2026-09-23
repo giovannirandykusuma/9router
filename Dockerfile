@@ -30,6 +30,10 @@ RUN --mount=type=cache,target=/root/.npm \
       --fetch-timeout=300000
 
 COPY . ./
+# Optional explicit CLI fingerprints; the committed defaults remain unchanged.
+ARG CLAUDE_CLI_VERSION=
+ARG CODEX_CLI_VERSION=
+RUN node scripts/set-cli-fingerprints.mjs "$CLAUDE_CLI_VERSION" "$CODEX_CLI_VERSION"
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
