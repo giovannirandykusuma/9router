@@ -252,7 +252,9 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels, display) {
       if (canDisable) body.thinking = { type: "adaptive", ...(display ? { display } : {}) };
       else delete body.thinking;
       const level = toLevel(eff);
-      body.output_config = { effort: level === "xhigh" || level === "auto" ? "high" : level };
+      // Preserve xhigh only for models that explicitly support it; auto is not a wire effort.
+      const effort = level === "auto" || (level === "xhigh" && !supportedLevels?.includes("xhigh")) ? "high" : level;
+      body.output_config = { effort };
       break;
     }
     case "claude-budget": {
