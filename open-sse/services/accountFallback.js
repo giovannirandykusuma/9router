@@ -24,6 +24,13 @@ export function checkFallbackError(status, errorText, backoffLevel = 0) {
   const lowerError = errorText
     ? (typeof errorText === "string" ? errorText : JSON.stringify(errorText)).toLowerCase()
     : "";
+  const invalidEncryptedContent = lowerError.includes("invalid_encrypted_content") ||
+    (lowerError.includes("encrypted content") &&
+      (lowerError.includes("could not be verified") || lowerError.includes("could not be decrypted or parsed")));
+  if (status === 400 && invalidEncryptedContent) {
+    return { shouldFallback: false, cooldownMs: 0 };
+  }
+
   const terminalStatusRule = ERROR_RULES.find(rule => rule.status === status && rule.fallback === false);
   if (terminalStatusRule) {
     return { shouldFallback: false, cooldownMs: 0, newBackoffLevel: backoffLevel };
