@@ -9,7 +9,7 @@ This branch is based on upstream **v0.5.86** (`39e36d3d`). It is an independentl
 | [#2622](https://github.com/decolua/9router/pull/2622) | Preserve reasoning display without literal think tags. |
 | [#3984](https://github.com/decolua/9router/pull/3984) | Claude cache accounting and client usage details; additional regression cases. |
 | [#4069](https://github.com/decolua/9router/pull/4069) | Preserve optional function-tool arguments through Chat → Responses → Codex. |
-| [#3827](https://github.com/decolua/9router/pull/3827) | Preserve xhigh on Claude model families identified by the PR as supporting it; retain existing adaptive display options. |
+| [#3827](https://github.com/decolua/9router/pull/3827) | **Superseded in v0.5.95** — upstream now gates xhigh for claude-adaptive itself (all Claude except 4.6 models). Fork version of `thinkingLevels.js`/`thinkingUnified.js` dropped in favour of upstream during the v0.5.95 merge. |
 | [#4078](https://github.com/decolua/9router/pull/4078) | Opt-in per-conversation account selection, with integration coverage for exclusions, model locks, preferred accounts, and interleaving. |
 | [#3386](https://github.com/decolua/9router/pull/3386) | Codex SSE context overflow detection and non-fallback HTTP 413. **Excludes unrelated model-list changes.** |
 | [#2667](https://github.com/decolua/9router/pull/2667) | One same-account retry for specifically rejected encrypted reasoning history. |
