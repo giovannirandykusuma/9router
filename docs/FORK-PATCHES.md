@@ -16,6 +16,7 @@ This branch is based on upstream **v0.5.86** (`39e36d3d`). It is an independentl
 | [#4278](https://github.com/decolua/9router/pull/4278) | Preserve Pi model limits, metadata, and custom provider settings. |
 | [#3556](https://github.com/decolua/9router/pull/3556) | Adapted first-byte watchdog with lifecycle tests. **Keeps the existing 200-second prefill deadline**, not the proposed 30 seconds. Clears timers on EOF/cancel and only switches to stall timing after nonempty bytes. |
 | [#3595](https://github.com/decolua/9router/pull/3595) | Model-context dashboard, persisted exact provider/model overrides, capability propagation, validation, and reset-to-current-default semantics. **Excludes glob/global overrides and all unrelated compatibility, statistics, schema, and retry changes.** |
+| [#4241](https://github.com/decolua/9router/pull/4241) | Per-API-key limits (RPM, daily/monthly tokens incl. input/output, monthly requests, monthly USD budget; HTTP 429 + `Retry-After`) and usage meters on Endpoint/Usage pages. **Merged with upstream v0.5.99 per-key access control** (both column sets in `apiKeys`, both survive export/import). Also wired into the System One handler, which postdates the PR. |
 
 ## Verification
 
@@ -39,6 +40,7 @@ Optional Docker build arguments `CLAUDE_CLI_VERSION` and `CODEX_CLI_VERSION` ove
 - The first-byte watchdog runs in stream piping; it does not add a deadline to every executor's pre-stream work. Existing fetch and provider-specific timeouts remain relevant.
 - Invalid encrypted-content recovery removes only rejected top-level reasoning ciphertext on a retry; it cannot preserve reasoning state that the provider refuses to decrypt.
 - Old usage database records are not rewritten.
+- Per-key token/budget limits are computed from `usageHistory` after responses complete, so concurrent in-flight requests can overshoot slightly; RPM is exact per process. Limit checks fail open on internal errors. Windows follow server local time.
 - CLI fingerprint updating must build this pinned fork revision rather than re-cloning an upstream tag and losing these patches.
 - This repository contains source only. Keep provider credentials, environment files, request logs, databases, deployment backups, and private host configuration outside it.
 
