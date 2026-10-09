@@ -151,3 +151,31 @@ describe("API key limits", () => {
     expect(status.today.requests).toBe(1);
   });
 });
+
+describe("API key limits + per-key access (fork merge with upstream v0.5.99)", () => {
+  it("keeps access restrictions and limits independent across create, update and export/import", async () => {
+    const key = await db.createApiKey("both", "machine-1", { dailyTokenLimit: 1000 });
+    expect(key.access).toEqual({ restricted: false, allow: [] });
+    expect(key.dailyTokenLimit).toBe(1000);
+
+    const restricted = await db.updateApiKey(key.id, { access: { restricted: true, allow: ["cc/claude-opus-5-5"] } });
+    expect(restricted.access).toEqual({ restricted: true, allow: ["cc/claude-opus-5-5"] });
+    expect(restricted.dailyTokenLimit).toBe(1000);
+
+    const limited = await db.updateApiKey(key.id, { monthlyBudget: 3 });
+    expect(limited.access).toEqual({ restricted: true, allow: ["cc/claude-opus-5-5"] });
+    expect(limited.monthlyBudget).toBe(3);
+    expect(limited.dailyTokenLimit).toBe(1000);
+
+    const dump = await db.exportDb();
+    const exported = dump.apiKeys.find((k) => k.id === key.id);
+    expect(exported.access).toEqual({ restricted: true, allow: ["cc/claude-opus-5-5"] });
+    expect(exported.monthlyBudget).toBe(3);
+
+    await db.importDb(dump);
+    const restored = await db.getApiKeyByKey(key.key);
+    expect(restored.access).toEqual({ restricted: true, allow: ["cc/claude-opus-5-5"] });
+    expect(restored.dailyTokenLimit).toBe(1000);
+    expect(restored.monthlyBudget).toBe(3);
+  });
+});

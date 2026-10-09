@@ -27,5 +27,9 @@ npx --no-install vitest run \
   unit/responses-completed-output.test.js \
   unit/usage-api-key-attribution.test.js \
   unit/openai-responses-terminal-event.test.js \
+  unit/api-key-limits.test.js \
+  unit/key-access.test.js \
+  unit/key-access-handlers.test.js \
+  unit/key-access-migration.test.js \
   --testNamePattern='^(?!.*GLM-5\.2 also gets reasoning_effort \(supported from 5\.2 onward\))(?!.*routes api\.anthropic\.com to gotScraping \(non-streaming\) and returns ok response)(?!.*uses static provider defaults when no model is given).*$' \
   --maxWorkers=2
