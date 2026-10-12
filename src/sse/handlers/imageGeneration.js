@@ -51,7 +51,16 @@ export async function handleImageGeneration(request) {
   } catch {
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid JSON body");
   }
+  return handleImageRequestBody(request, body);
+}
 
+/**
+ * Shared pipeline for /v1/images/generations and /v1/images/edits:
+ * API-key auth, per-key limits, per-key access, combos, account fallback, usage.
+ * @param {Request} request
+ * @param {object} body - parsed OpenAI-style image body (edits pass `images`)
+ */
+export async function handleImageRequestBody(request, body) {
   const url = new URL(request.url);
   const preferredConnectionId = request.headers.get("x-connection-id") || null;
   const wantsStream = (request.headers.get("accept") || "").includes("text/event-stream");

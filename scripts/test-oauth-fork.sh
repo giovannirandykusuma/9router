@@ -31,5 +31,7 @@ npx --no-install vitest run \
   unit/key-access.test.js \
   unit/key-access-handlers.test.js \
   unit/key-access-migration.test.js \
+  unit/image-edits-endpoint.test.js \
+  unit/codex-image-usage-persistence.test.js \
   --testNamePattern='^(?!.*GLM-5\.2 also gets reasoning_effort \(supported from 5\.2 onward\))(?!.*routes api\.anthropic\.com to gotScraping \(non-streaming\) and returns ok response)(?!.*uses static provider defaults when no model is given).*$' \
   --maxWorkers=2

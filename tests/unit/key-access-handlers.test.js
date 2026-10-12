@@ -47,6 +47,7 @@ vi.mock("open-sse/handlers/chatCore.js", () => ({ handleChatCore: mocks.handleCh
 const { handleChat } = await import("../../src/sse/handlers/chat.js");
 const { handleEmbeddings } = await import("../../src/sse/handlers/embeddings.js");
 const { handleImageGeneration } = await import("../../src/sse/handlers/imageGeneration.js");
+const { handleImageEdit } = await import("../../src/sse/handlers/imageEdit.js");
 const { handleTts } = await import("../../src/sse/handlers/tts.js");
 const { handleStt } = await import("../../src/sse/handlers/stt.js");
 const { handleVideoCreate } = await import("../../src/sse/handlers/videoGeneration.js");
@@ -158,6 +159,13 @@ describe("chat (/v1/chat/completions, /v1/messages, /v1/responses all use handle
 const handlers = [
   ["embeddings", (m, k) => handleEmbeddings(post("/v1/embeddings", { model: m, input: "x" }, k)), "openai/text-embedding-3-small", "openai/text-embedding-3-large"],
   ["image", (m, k) => handleImageGeneration(post("/v1/images/generations", { model: m, prompt: "x" }, k)), "openai/dall-e-3", "openai/gpt-image-1"],
+  ["image-edit", (m, k) => {
+    const fd = new FormData();
+    fd.set("model", m);
+    fd.set("prompt", "x");
+    fd.set("image", new Blob([new Uint8Array(8)], { type: "image/png" }), "a.png");
+    return handleImageEdit(new Request("http://localhost/v1/images/edits", { method: "POST", headers: auth(k), body: fd }));
+  }, "openai/dall-e-3", "openai/gpt-image-1"],
   ["tts", (m, k) => handleTts(post("/v1/audio/speech", { model: m, input: "x" }, k)), "openai/tts-1", "openai/tts-1-hd"],
   ["stt", (m, k) => {
     const fd = new FormData();
