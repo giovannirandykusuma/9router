@@ -33,5 +33,16 @@ npx --no-install vitest run \
   unit/key-access-migration.test.js \
   unit/image-edits-endpoint.test.js \
   unit/codex-image-usage-persistence.test.js \
+  unit/dashboard-guard.test.js \
+  unit/mcp-gateway-keys-route.test.js \
+  unit/mcp-http-session.test.js \
+  unit/mcp-oauth-cimd.test.js \
+  unit/mcp-oauth-client-config.test.js \
+  unit/mcp-oauth-status.test.js \
+  unit/mcp-retry.test.js \
+  unit/mcp-stdio-init-state.test.js \
+  unit/mcp-stdio-reconnect.test.js \
+  unit/oauth-discovery-registration-fallback.test.js \
+  unit/oauth-discovery-wellknown.test.js \
   --testNamePattern='^(?!.*GLM-5\.2 also gets reasoning_effort \(supported from 5\.2 onward\))(?!.*routes api\.anthropic\.com to gotScraping \(non-streaming\) and returns ok response)(?!.*uses static provider defaults when no model is given).*$' \
   --maxWorkers=2
