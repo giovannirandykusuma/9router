@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getGatewayKeys, createGatewayKey } from "@/lib/localDb";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
-import { isLocalRequest } from "@/dashboardGuard";
+import { canManageRawGatewayKeys } from "@/lib/mcp/gateway/keyAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -25,11 +25,10 @@ export async function GET() {
 
 export async function POST(request) {
   try {
-    // Key creation reveals the raw key. Restrict to local requests (SSRF-style
-    // protection — remote callers must not be able to create and reveal keys).
-    if (!isLocalRequest(request)) {
+    // Key creation reveals the raw key: local requests or a logged-in dashboard session.
+    if (!(await canManageRawGatewayKeys(request))) {
       return NextResponse.json(
-        { error: "Key creation is only available from local requests." },
+        { error: "Key creation requires a logged-in dashboard session." },
         { status: 403 }
       );
     }

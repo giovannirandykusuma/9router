@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isLocalRequest } from "@/dashboardGuard";
+import { canManageRawGatewayKeys } from "@/lib/mcp/gateway/keyAccess";
 import {
   getGatewayKeyById,
   deleteGatewayKey,
@@ -24,11 +24,10 @@ export async function GET(request, context) {
     const grants = await getGrantsForKeyDetailed(id);
     const url = new URL(request.url);
     const reveal = url.searchParams.get("reveal") === "1";
-    // reveal=1 returns the raw key. Restrict to local requests (SSRF-style
-    // protection — remote callers must copy keys from the creation modal).
-    if (reveal && !isLocalRequest(request)) {
+    // reveal=1 returns the raw key: local requests or a logged-in dashboard session.
+    if (reveal && !(await canManageRawGatewayKeys(request))) {
       return NextResponse.json(
-        { error: "Key reveal is only available from local requests." },
+        { error: "Key reveal requires a logged-in dashboard session." },
         { status: 403 }
       );
     }

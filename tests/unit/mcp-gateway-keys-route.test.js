@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   createGatewayKey: vi.fn(),
   getConsistentMachineId: vi.fn(),
   isLocalRequest: vi.fn(),
+  verifyDashboardAuthToken: vi.fn(),
 }));
 
 vi.mock("next/server", () => ({
@@ -30,13 +31,18 @@ vi.mock("@/dashboardGuard", () => ({
   isLocalRequest: mocks.isLocalRequest,
 }));
 
+vi.mock("@/lib/auth/dashboardSession", () => ({
+  verifyDashboardAuthToken: mocks.verifyDashboardAuthToken,
+}));
+
 // Import after mocks are set up
 const { GET, POST } = await import("../../src/app/api/mcp-gateway/keys/route");
 
-function request(headers = {}, body = null) {
+function request(headers = {}, body = null, cookies = {}) {
   const normalizedHeaders = new Headers(headers);
   return {
     headers: normalizedHeaders,
+    cookies: { get: (n) => (cookies[n] !== undefined ? { value: cookies[n] } : undefined) },
     json: vi.fn().mockResolvedValue(body || {}),
     url: `http://localhost/api/mcp-gateway/keys`,
   };
@@ -83,6 +89,37 @@ describe("MCP Gateway Keys GET endpoint", () => {
   });
 });
 
+describe("MCP Gateway Keys POST endpoint - remote dashboard session", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.getConsistentMachineId.mockResolvedValue("test-machine-id");
+    mocks.isLocalRequest.mockReturnValue(false);
+    mocks.createGatewayKey.mockResolvedValue({ id: "k1", name: "pc", key: "sk-raw" });
+  });
+
+  it("allows remote creation with a valid dashboard session cookie", async () => {
+    mocks.verifyDashboardAuthToken.mockResolvedValue(true);
+    const response = await POST(request({ host: "strangeshi.com" }, { name: "pc" }, { auth_token: "jwt" }));
+    expect(response.status).toBe(201);
+    expect(response.body.key.key).toBe("sk-raw");
+    expect(mocks.verifyDashboardAuthToken).toHaveBeenCalledWith("jwt");
+  });
+
+  it("rejects remote creation with an invalid/expired session cookie", async () => {
+    mocks.verifyDashboardAuthToken.mockResolvedValue(false);
+    const response = await POST(request({ host: "strangeshi.com" }, { name: "pc" }, { auth_token: "bad" }));
+    expect(response.status).toBe(403);
+    expect(mocks.createGatewayKey).not.toHaveBeenCalled();
+  });
+
+  it("rejects remote creation without a session cookie (e.g. requireLogin=false or CLI token)", async () => {
+    const response = await POST(request({ host: "strangeshi.com", authorization: "Bearer cli" }, { name: "pc" }));
+    expect(response.status).toBe(403);
+    expect(mocks.verifyDashboardAuthToken).not.toHaveBeenCalled();
+    expect(mocks.createGatewayKey).not.toHaveBeenCalled();
+  });
+});
+
 describe("MCP Gateway Keys POST endpoint - local-only hardening", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -96,7 +133,7 @@ describe("MCP Gateway Keys POST endpoint - local-only hardening", () => {
     const response = await POST(req);
 
     expect(response.status).toBe(403);
-    expect(response.body.error).toBe("Key creation is only available from local requests.");
+    expect(response.body.error).toBe("Key creation requires a logged-in dashboard session.");
     expect(mocks.createGatewayKey).not.toHaveBeenCalled();
   });
 
@@ -151,7 +188,7 @@ describe("MCP Gateway Keys POST endpoint - local-only hardening", () => {
     const response = await POST(req);
 
     expect(response.status).toBe(403);
-    expect(response.body.error).toBe("Key creation is only available from local requests.");
+    expect(response.body.error).toBe("Key creation requires a logged-in dashboard session.");
     expect(mocks.createGatewayKey).not.toHaveBeenCalled();
   });
 
