@@ -6,6 +6,7 @@ This branch is based on upstream **v0.5.86** (`39e36d3d`). It is an independentl
 
 | Upstream PR | Scope in this fork |
 | --- | --- |
+| [#4755](https://github.com/decolua/9router/pull/4755) (adapted) + fork MCP usage detail | Live normal-key cards and validated usage deep links; separate indexed 30d dashboard summaries (not the hot auth path), distinct MCP key names/types and gateway-card counts/top tools. MCP call metadata stores only duration and bounded single-line error detail; auth warnings are key-free and throttled. No schema change. |
 | [#2622](https://github.com/decolua/9router/pull/2622) | Preserve reasoning display without literal think tags. |
 | [#3984](https://github.com/decolua/9router/pull/3984) | Claude cache accounting and client usage details; additional regression cases. |
 | [#4069](https://github.com/decolua/9router/pull/4069) | Preserve optional function-tool arguments through Chat → Responses → Codex. |

@@ -285,7 +285,7 @@ export async function saveRequestUsage(entry) {
           entry.timestamp, entry.provider || null, entry.model || null,
           entry.connectionId || null, entry.apiKey || null, entry.endpoint || null,
           promptTokens, completionTokens, entry.cost || 0, entry.status || "ok",
-          stringifyJson(tokens), stringifyJson({}),
+          stringifyJson(tokens), stringifyJson(entry.meta || {}),
         ]
       );
 
@@ -342,6 +342,39 @@ export async function getApiKeyUsageTotals(apiKey, dayStartIso, monthStartIso) {
   };
 }
 
+// Dashboard summaries stay off the key-validation hot path. Bounds and key predicates
+// let SQLite use idx_uh_apikey_ts; only grouped results leave the database.
+export async function getKeyUsageSummary(keys, { gateway = false, now = new Date() } = {}) {
+  if (!keys.length) return {};
+  const db = await getAdapter();
+  const day = new Date(now);
+  day.setHours(0, 0, 0, 0);
+  const seven = new Date(now.getTime() - 7 * 86400000).toISOString();
+  const thirty = new Date(now.getTime() - 30 * 86400000).toISOString();
+  const placeholders = keys.map(() => "?").join(",");
+  const where = `apiKey IN (${placeholders}) AND timestamp >= ? AND timestamp <= ?${gateway ? " AND provider = 'mcp-gateway'" : ""}`;
+  const params = [...keys.map((k) => k.key), thirty, now.toISOString()];
+  const rows = db.all(`SELECT apiKey, COUNT(*) AS requests,
+    SUM(promptTokens + completionTokens) AS totalTokens, MAX(timestamp) AS lastUsed,
+    SUM(CASE WHEN timestamp >= ? THEN 1 ELSE 0 END) AS today,
+    SUM(CASE WHEN timestamp >= ? THEN 1 ELSE 0 END) AS sevenDays,
+    SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) AS errors,
+    AVG(CASE WHEN json_valid(meta) AND json_type(meta, '$.durationMs') IN ('integer', 'real')
+      THEN json_extract(meta, '$.durationMs') END) AS durationMs
+    FROM usageHistory WHERE ${where} GROUP BY apiKey`, [day.toISOString(), seven, ...params]);
+  const byKey = new Map(rows.map((r) => [r.apiKey, r]));
+  const tools = gateway ? db.all(`SELECT apiKey, model AS tool, COUNT(*) AS count
+    FROM usageHistory WHERE ${where} GROUP BY apiKey, model ORDER BY count DESC, model ASC`, params) : [];
+  return Object.fromEntries(keys.map((k) => {
+    const r = byKey.get(k.key);
+    return [k.id, gateway ? {
+      today: r?.today || 0, sevenDays: r?.sevenDays || 0, thirtyDays: r?.requests || 0,
+      errors: r?.errors || 0, lastUsed: r?.lastUsed || null, avgDurationMs: r?.durationMs ?? null,
+      topTools: tools.filter((t) => t.apiKey === k.key).slice(0, 5).map(({ tool, count }) => ({ tool, count })),
+    } : { requests: r?.requests || 0, totalTokens: r?.totalTokens || 0, lastUsed: r?.lastUsed || null }];
+  }));
+}
+
 export async function getUsageHistory(filter = {}) {
   const db = await getAdapter();
   const conds = [];
@@ -395,7 +428,11 @@ export async function getUsageStats(period = "all") {
   let allApiKeys = [];
   try { allApiKeys = await getApiKeys(); } catch {}
   const apiKeyMap = {};
-  for (const k of allApiKeys) apiKeyMap[k.key] = { name: k.name, id: k.id, createdAt: k.createdAt };
+  for (const k of allApiKeys) apiKeyMap[k.key] = { name: k.name, id: k.id, keyType: "api", createdAt: k.createdAt };
+  const { getGatewayKeys } = await import("./mcpGatewayRepo.js");
+  for (const k of await getGatewayKeys()) {
+    apiKeyMap[k.key] = { name: `MCP · ${k.name || k.id.slice(0, 8)}`, id: k.id, keyType: "mcp" };
+  }
 
   // recentRequests from live history (last 100 entries enough for 20 deduped)
   const recentRows = db.all(`SELECT timestamp, provider, model, tokens, status FROM usageHistory ORDER BY id DESC LIMIT 100`);
@@ -535,11 +572,11 @@ export async function getUsageStats(period = "all") {
         const providerDisplayName = providerNodeNameMap[provider] || provider;
         const apiKeyVal = ak.apiKey;
         const keyInfo = apiKeyVal ? apiKeyMap[apiKeyVal] : null;
-        const keyName = keyInfo?.name || (apiKeyVal ? apiKeyVal.slice(0, 8) + "..." : "Local (No API Key)");
+        const keyName = keyInfo?.name || (apiKeyVal ? maskApiKey(apiKeyVal) : "Local (No API Key)");
         const apiKeyMasked = maskApiKey(apiKeyVal);
         const apiKeyKey = apiKeyMasked || "local-no-key";
         if (!stats.byApiKey[akKey]) {
-          stats.byApiKey[akKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, rawModel, provider: providerDisplayName, apiKeyMasked, keyName, apiKeyKey, lastUsed: dateKey };
+          stats.byApiKey[akKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, rawModel, provider: providerDisplayName, apiKeyMasked, keyName, keyType: keyInfo?.keyType || (provider === "mcp-gateway" ? "mcp" : "api"), apiKeyKey, lastUsed: dateKey };
         }
         stats.byApiKey[akKey].requests += ak.requests || 0;
         stats.byApiKey[akKey].promptTokens += ak.promptTokens || 0;
@@ -593,7 +630,10 @@ export async function getUsageStats(period = "all") {
       const apiKeyKey = (e.apiKey && typeof e.apiKey === "string")
         ? `${e.apiKey}|${e.model}|${e.provider || "unknown"}`
         : "local-no-key";
-      if (stats.byApiKey[apiKeyKey] && new Date(ts) > new Date(stats.byApiKey[apiKeyKey].lastUsed)) stats.byApiKey[apiKeyKey].lastUsed = ts;
+      if (stats.byApiKey[apiKeyKey]) {
+        stats.byApiKey[apiKeyKey].keyType = apiKeyMap[e.apiKey]?.keyType || (e.provider === "mcp-gateway" ? "mcp" : "api");
+        if (new Date(ts) > new Date(stats.byApiKey[apiKeyKey].lastUsed)) stats.byApiKey[apiKeyKey].lastUsed = ts;
+      }
 
       const endpoint = e.endpoint || "Unknown";
       const endpointKey = `${endpoint}|${e.model}|${e.provider || "unknown"}`;
@@ -661,13 +701,13 @@ export async function getUsageStats(period = "all") {
 
       if (r.apiKey && typeof r.apiKey === "string") {
         const keyInfo = apiKeyMap[r.apiKey];
-        const keyName = keyInfo?.name || r.apiKey.slice(0, 8) + "...";
+        const keyName = keyInfo?.name || maskApiKey(r.apiKey);
         const apiKeyMasked = maskApiKey(r.apiKey);
         // Key by the FULL api key (same as the daily rollup + lastUsed overlay)
         // — masking here collided all keys sharing a prefix into one bucket.
         const akKey = `${r.apiKey}|${r.model}|${r.provider || "unknown"}`;
         if (!stats.byApiKey[akKey]) {
-          stats.byApiKey[akKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, rawModel: r.model, provider: providerDisplayName, apiKeyMasked, keyName, apiKeyKey: apiKeyMasked, lastUsed: r.timestamp };
+          stats.byApiKey[akKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, rawModel: r.model, provider: providerDisplayName, apiKeyMasked, keyName, keyType: keyInfo?.keyType || (r.provider === "mcp-gateway" ? "mcp" : "api"), apiKeyKey: apiKeyMasked, lastUsed: r.timestamp };
         }
         const ake = stats.byApiKey[akKey];
         ake.requests++; ake.promptTokens += promptTokens; ake.completionTokens += completionTokens; ake.cachedTokens += cachedTokens; ake.cost += entryCost;

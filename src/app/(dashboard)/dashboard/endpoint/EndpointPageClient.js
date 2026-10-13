@@ -29,6 +29,7 @@ export default function APIPageClient({ machineId }) {
   const [createdKey, setCreatedKey] = useState(null);
   const [confirmState, setConfirmState] = useState(null);
   const [keyUsage, setKeyUsage] = useState({});
+  const [keyUsageSummary, setKeyUsageSummary] = useState({});
   const [limitsKey, setLimitsKey] = useState(null);
 
   const [requireApiKey, setRequireApiKey] = useState(false);
@@ -670,6 +671,8 @@ export default function APIPageClient({ machineId }) {
       if (!res.ok) return;
       const data = await res.json();
       setKeyUsage(data.usage || {});
+      const summaryRes = await fetch("/api/keys/usage-summary", { cache: "no-store" });
+      if (summaryRes.ok) setKeyUsageSummary((await summaryRes.json()).usage || {});
     } catch { /* usage meters are best-effort */ }
   }, []);
 
@@ -1100,6 +1103,10 @@ export default function APIPageClient({ machineId }) {
                     })}
                   />
                   <KeyUsageSummary usage={keyUsage[key.id]} />
+                  <p className="text-xs text-text-muted mt-1">
+                    {(keyUsageSummary[key.id]?.requests || 0).toLocaleString()} reqs · {(keyUsageSummary[key.id]?.totalTokens || 0).toLocaleString()} tokens (30d) · {" "}
+                    <a href="/dashboard/usage?view=apiKey" className="text-primary hover:underline">View usage →</a>
+                  </p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0 pt-0.5">
                   <button

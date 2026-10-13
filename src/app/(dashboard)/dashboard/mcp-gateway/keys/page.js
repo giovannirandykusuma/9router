@@ -36,8 +36,18 @@ function maskKey(fullKey) {
   return fullKey.slice(0, 6) + "•".repeat(fullKey.length - 10) + fullKey.slice(-4);
 }
 
+function relativeLastUsed(timestamp) {
+  if (!timestamp) return "never";
+  const minutes = Math.max(0, Math.floor((Date.now() - new Date(timestamp).getTime()) / 60000));
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 1440) return `${Math.floor(minutes / 60)}h ago`;
+  return `${Math.floor(minutes / 1440)}d ago`;
+}
+
 export default function McpGatewayKeysPage() {
   const [keys, setKeys] = useState([]);
+  const [usage, setUsage] = useState({});
   const [instances, setInstances] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -53,15 +63,17 @@ export default function McpGatewayKeysPage() {
   const reload = useCallback(async () => {
     setLoading(true);
     try {
-      const [keyRes, instRes] = await Promise.all([
+      const [keyRes, instRes, usageRes] = await Promise.all([
         fetch("/api/mcp-gateway/keys"),
         fetch("/api/mcp-gateway/instances"),
+        fetch("/api/mcp-gateway/keys/usage", { cache: "no-store" }),
       ]);
       const keyBody = keyRes.ok ? await keyRes.json().catch(() => ({})) : {};
       const instBody = instRes.ok ? await instRes.json().catch(() => ({})) : {};
       if (!keyRes.ok) notify({ type: "error", message: keyBody.error || `Failed to load keys (${keyRes.status})` });
       setKeys(parseGatewayKeys(keyBody.keys));
       setInstances(parseGrantInstances(instBody.instances));
+      setUsage(usageRes.ok ? (await usageRes.json()).usage || {} : {});
     } catch (e) {
       notify({ type: "error", message: (e instanceof Error ? e.message : "Failed to load gateway keys") });
       setKeys([]);
@@ -178,6 +190,7 @@ export default function McpGatewayKeysPage() {
         ) : (
           <div className="flex flex-col">
             {keys.map((k) => {
+              const stats = usage[k.id];
               const isShown = showKeyForRow.has(k.id);
               const raw = revealedKeys[k.id] ?? "";
               return (
@@ -187,6 +200,11 @@ export default function McpGatewayKeysPage() {
                 >
                   <div className="min-w-0 flex-1">
                     <div className="font-medium text-text-main">{k.name || <span className="text-text-muted">unnamed</span>}</div>
+                    <p className="text-xs text-text-muted mt-1">
+                      {stats?.today || 0} today · {stats?.sevenDays || 0} 7d · {stats?.thirtyDays || 0} 30d · {stats?.errors || 0} errors · last used {relativeLastUsed(stats?.lastUsed)} · avg {stats?.avgDurationMs == null ? "—" : `${Math.round(stats.avgDurationMs)}ms`}
+                    </p>
+                    {stats?.topTools?.length > 0 && <p className="text-xs text-text-muted mt-1 break-all">{stats.topTools.map((t) => `${t.tool} (${t.count})`).join(" · ")}</p>}
+                    <a href="/dashboard/usage?view=apiKey" className="text-xs text-primary hover:underline">View usage →</a>
                     <div className="flex items-center gap-2 mt-1 flex-wrap">
                       {isShown ? (
                         <code className="text-xs text-text-muted font-mono break-all">{raw}</code>

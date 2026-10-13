@@ -173,6 +173,7 @@ const ACCOUNT_COLUMNS = [
 
 const API_KEY_COLUMNS = [
   { field: "keyName", label: "API Key Name" },
+  { field: "keyType", label: "Type" },
   { field: "rawModel", label: "Model" },
   { field: "provider", label: "Provider" },
   { field: "requests", label: "Requests", align: "right" },
@@ -213,7 +214,10 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [fetching, setFetching] = useState(false);
-  const [tableView, setTableView] = useState("model");
+  const [tableView, setTableView] = useState(() => {
+    const view = searchParams.get("view");
+    return TABLE_OPTIONS.some((option) => option.value === view) ? view : "model";
+  });
   const [viewMode, setViewMode] = useState("costs");
   const [providers, setProviders] = useState([]);
   const [periodLocal, setPeriodLocal] = useState("today");
@@ -393,6 +397,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
             <>
               <td className="px-6 py-3 text-text-muted">—</td>
               <td className="px-6 py-3 text-text-muted">—</td>
+              <td className="px-6 py-3 text-text-muted">—</td>
               <td className="px-6 py-3 text-right">{fmt(group.summary.requests)}</td>
               <td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">{fmtTime(group.summary.lastUsed)}</td>
             </>
@@ -400,6 +405,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
           renderDetailCells: (item) => (
             <>
               <td className="px-6 py-3 font-medium">{item.keyName}</td>
+              <td className="px-6 py-3"><Badge variant="neutral" size="sm">{item.keyType === "mcp" ? "MCP" : "API"}</Badge></td>
               <td className="px-6 py-3">{item.rawModel}</td>
               <td className="px-6 py-3"><Badge variant="neutral" size="sm">{item.provider}</Badge></td>
               <td className="px-6 py-3 text-right">{fmt(item.requests)}</td>

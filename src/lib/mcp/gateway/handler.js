@@ -37,6 +37,17 @@ function jsonRpcErr(id, code, message, data) {
   return { jsonrpc: "2.0", id: id ?? null, error: { code, message, ...(data !== undefined ? { data } : {}) } };
 }
 
+const authWarnings = new Map();
+function warnAuthFailure(request, reason) {
+  const now = Date.now();
+  if (authWarnings.has(reason) && now - authWarnings.get(reason) < 10000) return;
+  authWarnings.set(reason, now);
+  // Forwarding data is diagnostic only, never used for authentication.
+  const hop = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
+  const source = hop && /^[a-fA-F0-9.:]+$/.test(hop) ? hop.slice(0, 64) : "local";
+  console.warn(`[mcp-gw] auth failed: ${reason} from ${source}`);
+}
+
 async function authenticate(request) {
   const rawKey = extractApiKey(request);
   if (!rawKey) return { ok: false, reason: "missing" };
@@ -62,6 +73,7 @@ async function authenticate(request) {
 export async function handleJsonRpc(request, body, opts = {}) {
   const auth = await authenticate(request);
   if (!auth.ok) {
+    warnAuthFailure(request, auth.reason);
     return { kind: "response", status: 401, body: jsonRpcErr(null, -32000, `gateway key ${auth.reason}`) };
   }
   const { rawKey, instances, grants } = auth;
@@ -104,6 +116,7 @@ export async function handleJsonRpc(request, body, opts = {}) {
       if (!instance) {
         return respond(jsonRpcErr(obj.id, -32602, `unknown tool: ${toolName}`));
       }
+      const started = performance.now();
       try {
         const { dispatchToolCall } = await import("./aggregator");
         const args = isRecord(params.arguments) ? params.arguments : {};
@@ -115,7 +128,8 @@ export async function handleJsonRpc(request, body, opts = {}) {
           apiKey: rawKey,
           endpoint: "/api/mcp-gateway",
           tokens: {},
-          status: "ok",
+          status: result?.isError ? "error" : "ok",
+          meta: { durationMs: Math.round(performance.now() - started), ...(result?.isError ? { error: "Tool returned isError" } : {}) },
         }).catch((e) => console.warn("[mcp-gw] usage log failed:", e?.message));
         return respond(jsonRpcOk(obj.id, result ?? { content: [], isError: false }));
       } catch (e) {
@@ -130,6 +144,7 @@ export async function handleJsonRpc(request, body, opts = {}) {
           endpoint: "/api/mcp-gateway",
           tokens: {},
           status: "error",
+          meta: { durationMs: Math.round(performance.now() - started), error: errMsg.replace(/[\r\n\u2028\u2029]+/g, " ").slice(0, 200) },
         }).catch(() => {});
         if (isUpstream) {
           return respond(jsonRpcOk(obj.id, {
