@@ -99,7 +99,7 @@ describe("MCP Gateway Keys POST endpoint - remote dashboard session", () => {
 
   it("allows remote creation with a valid dashboard session cookie", async () => {
     mocks.verifyDashboardAuthToken.mockResolvedValue(true);
-    const response = await POST(request({ host: "strangeshi.com" }, { name: "pc" }, { auth_token: "jwt" }));
+    const response = await POST(request({ host: "router.example.com" }, { name: "pc" }, { auth_token: "jwt" }));
     expect(response.status).toBe(201);
     expect(response.body.key.key).toBe("sk-raw");
     expect(mocks.verifyDashboardAuthToken).toHaveBeenCalledWith("jwt");
@@ -107,13 +107,13 @@ describe("MCP Gateway Keys POST endpoint - remote dashboard session", () => {
 
   it("rejects remote creation with an invalid/expired session cookie", async () => {
     mocks.verifyDashboardAuthToken.mockResolvedValue(false);
-    const response = await POST(request({ host: "strangeshi.com" }, { name: "pc" }, { auth_token: "bad" }));
+    const response = await POST(request({ host: "router.example.com" }, { name: "pc" }, { auth_token: "bad" }));
     expect(response.status).toBe(403);
     expect(mocks.createGatewayKey).not.toHaveBeenCalled();
   });
 
   it("rejects remote creation without a session cookie (e.g. requireLogin=false or CLI token)", async () => {
-    const response = await POST(request({ host: "strangeshi.com", authorization: "Bearer cli" }, { name: "pc" }));
+    const response = await POST(request({ host: "router.example.com", authorization: "Bearer cli" }, { name: "pc" }));
     expect(response.status).toBe(403);
     expect(mocks.verifyDashboardAuthToken).not.toHaveBeenCalled();
     expect(mocks.createGatewayKey).not.toHaveBeenCalled();

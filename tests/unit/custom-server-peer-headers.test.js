@@ -84,3 +84,43 @@ describe("custom-server peer header sanitizing", () => {
     expect(sanitized["x-9r-real-ip"]).toBe("127.0.0.1");
   });
 });
+
+// Caddy on the host reaches a container through docker-proxy, so the socket peer is the
+// bridge gateway (172.17.0.1), not loopback. Without TRUSTED_PROXY_IPS every remote client
+// collapses into that one address and shares a single login-lockout bucket.
+describe("custom-server trusted proxy hops (TRUSTED_PROXY_IPS)", () => {
+  const { __resolveClientIp: resolve } = require("../../custom-server.js");
+  const prev = process.env.TRUSTED_PROXY_IPS;
+  afterAll(() => {
+    if (prev === undefined) delete process.env.TRUSTED_PROXY_IPS;
+    else process.env.TRUSTED_PROXY_IPS = prev;
+  });
+
+  it("ignores forwarding headers from a non-loopback peer by default", () => {
+    delete process.env.TRUSTED_PROXY_IPS;
+    expect(resolve("172.17.0.1", "203.0.113.7", undefined)).toBe("172.17.0.1");
+    expect(resolve("::ffff:172.17.0.1", undefined, "203.0.113.7")).toBe("::ffff:172.17.0.1");
+  });
+
+  it("adopts X-Real-IP / first XFF hop from a configured proxy IP (v4 and v4-mapped)", () => {
+    process.env.TRUSTED_PROXY_IPS = "172.17.0.1";
+    expect(resolve("172.17.0.1", "203.0.113.7", undefined)).toBe("203.0.113.7");
+    expect(resolve("::ffff:172.17.0.1", undefined, "198.51.100.4, 10.0.0.1")).toBe("198.51.100.4");
+  });
+
+  it("does not trust other non-loopback peers even when the list is set", () => {
+    process.env.TRUSTED_PROXY_IPS = "172.17.0.1";
+    expect(resolve("203.0.113.50", "1.2.3.4", "1.2.3.4")).toBe("203.0.113.50");
+    expect(resolve("172.17.0.2", "1.2.3.4", undefined)).toBe("172.17.0.2");
+  });
+
+  it("keeps the socket address when a trusted proxy sends no forwarding header", () => {
+    process.env.TRUSTED_PROXY_IPS = "172.17.0.1, 10.0.0.9";
+    expect(resolve("10.0.0.9", undefined, undefined)).toBe("10.0.0.9");
+  });
+
+  it("still trusts loopback with no configuration", () => {
+    delete process.env.TRUSTED_PROXY_IPS;
+    expect(resolve("127.0.0.1", "203.0.113.8", undefined)).toBe("203.0.113.8");
+  });
+});

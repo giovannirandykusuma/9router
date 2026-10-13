@@ -34,6 +34,7 @@ npx --no-install vitest run \
   unit/image-edits-endpoint.test.js \
   unit/codex-image-usage-persistence.test.js \
   unit/dashboard-guard.test.js \
+  unit/custom-server-peer-headers.test.js \
   unit/usage-key-breakdown.test.js \
   unit/mcp-handler-usage.test.js \
   unit/mcp-gateway-keys-route.test.js \

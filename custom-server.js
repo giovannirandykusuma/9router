@@ -6,6 +6,37 @@ const { pathToFileURL } = require("url");
 
 const origCreate = http.createServer.bind(http);
 
+function normalizePeerIp(ip) {
+  const s = String(ip || "").trim().toLowerCase();
+  return s.startsWith("::ffff:") ? s.slice(7) : s;
+}
+
+// Exact IPs (no CIDR) whose forwarding headers are trusted, in addition to loopback.
+// Only set this when that address can be reached solely by your reverse proxy.
+let trustedProxyCache = { raw: null, set: new Set() };
+function trustedProxyIps() {
+  const raw = process.env.TRUSTED_PROXY_IPS || "";
+  if (raw !== trustedProxyCache.raw) {
+    trustedProxyCache = {
+      raw,
+      set: new Set(raw.split(",").map(normalizePeerIp).filter(Boolean)),
+    };
+  }
+  return trustedProxyCache.set;
+}
+
+// Trust forwarding headers only when the TCP peer is a local reverse proxy, or an
+// explicitly configured proxy hop (TRUSTED_PROXY_IPS, e.g. the Docker bridge gateway
+// 172.17.0.1 when Caddy on the host reaches a published 127.0.0.1 port).
+// Direct/public sockets remain keyed by the unspoofable peer address.
+function resolveClientIp(socketIp, xRealIp, xff) {
+  const peer = normalizePeerIp(socketIp);
+  const isTrustedProxy = peer === "127.0.0.1" || peer === "::1" || trustedProxyIps().has(peer);
+  const proxyIp = xRealIp || (xff ? String(xff).split(",")[0].trim() : "");
+  return isTrustedProxy && proxyIp ? String(proxyIp).trim() : socketIp;
+}
+module.exports.__resolveClientIp = resolveClientIp;
+
 // Per-process secret proving x-9r-real-ip was stamped below rather than sent by the client.
 // A bare `next start` / `next dev` never loads this file, so it cannot produce a matching
 // header even though the env var is inherited by child processes. Named like x-9r-cli-token
@@ -58,11 +89,7 @@ http.createServer = (...args) => {
     const xff = req.headers["x-forwarded-for"];
     const xRealIp = req.headers["x-real-ip"];
     const viaProxy = !!(xff || xRealIp);
-    const isLoopbackProxy = socketIp === "127.0.0.1" || socketIp === "::1" || socketIp === "::ffff:127.0.0.1";
-    // Trust forwarding headers only when the TCP peer is a local reverse proxy.
-    // Direct/public sockets remain keyed by the unspoofable peer address.
-    const proxyIp = xRealIp || (xff ? String(xff).split(",")[0].trim() : "");
-    const ip = isLoopbackProxy && proxyIp ? proxyIp : socketIp;
+    const ip = resolveClientIp(socketIp, xRealIp, xff);
     delete req.headers["x-9r-real-ip"];
     delete req.headers["x-forwarded-for"];
     delete req.headers["x-9r-via-proxy"];
