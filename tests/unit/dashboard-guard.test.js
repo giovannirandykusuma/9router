@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   })),
   getSettings: vi.fn(),
   validateApiKey: vi.fn(),
+  validateGatewayKey: vi.fn(),
   getConsistentMachineId: vi.fn(),
   verifyDashboardAuthToken: vi.fn(),
 }));
@@ -23,6 +24,7 @@ vi.mock("next/server", () => ({
 vi.mock("@/lib/localDb", () => ({
   getSettings: mocks.getSettings,
   validateApiKey: mocks.validateApiKey,
+  validateGatewayKey: mocks.validateGatewayKey,
 }));
 
 vi.mock("@/shared/utils/machineId", () => ({
@@ -306,6 +308,47 @@ describe("dashboard guard MCP CIMD client-metadata", () => {
       host: "router.example.com",
     }));
     expect(response.status).toBe(401);
+  });
+});
+
+describe("dashboard guard MCP gateway protocol surface", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.NINEROUTER_PEER_TOKEN = PEER_TOKEN;
+    mocks.getConsistentMachineId.mockResolvedValue("cli-token");
+    mocks.getSettings.mockResolvedValue({ requireLogin: true });
+    mocks.verifyDashboardAuthToken.mockResolvedValue(false);
+    mocks.validateApiKey.mockResolvedValue(true);
+    mocks.validateGatewayKey.mockImplementation(async (k) => (k === "gw-good" ? { id: "g1" } : null));
+  });
+
+  for (const path of ["/api/mcp-gateway", "/api/mcp-gateway/sse", "/api/mcp-gateway/message"]) {
+    it(`rejects remote ${path} without a key`, async () => {
+      const response = await proxy(request(path, { host: "router.example.com" }));
+      expect(response.status).toBe(401);
+    });
+
+    it(`accepts remote ${path} with a valid gateway key`, async () => {
+      const response = await proxy(request(path, { host: "router.example.com", authorization: "Bearer gw-good" }));
+      expect(response).toBe(mocks.nextResponse);
+    });
+
+    it(`rejects remote ${path} with an LLM API key that is not a gateway key`, async () => {
+      const response = await proxy(request(path, { host: "router.example.com", authorization: "Bearer sk-llm" }));
+      expect(response.status).toBe(401);
+    });
+  }
+
+  it("does not let a gateway key reach gateway CRUD (instances/keys)", async () => {
+    for (const path of ["/api/mcp-gateway/instances", "/api/mcp-gateway/keys", "/api/mcp-gateway/oauth/x/authorize"]) {
+      const response = await proxy(request(path, { host: "router.example.com", authorization: "Bearer gw-good" }));
+      expect(response.status).toBe(401);
+    }
+  });
+
+  it("keeps the legacy stdio bridge /api/mcp/* local-only", async () => {
+    const response = await proxy(request("/api/mcp/browsermcp/sse", { host: "router.example.com", authorization: "Bearer gw-good" }));
+    expect(response.status).toBe(403);
   });
 });
 
