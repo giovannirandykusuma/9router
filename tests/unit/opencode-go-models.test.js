@@ -34,6 +34,7 @@ describe("OpenCode Go model catalog", () => {
       "hy4-preview", "hy3", "hy3-preview", "omen-alpha",
       "grok-4.7", "grok-4.6", "grok-4.5", "gpt-5.6-luna", "gpt-6-luna",
       "muse-spark-1.2-contributor", "muse-spark-1.3-contributor",
+      "gemini-4-argon-contributor",
     ]);
   });
 });
@@ -95,9 +96,9 @@ describe("OpenCode Go per-model supportedFormats", () => {
 });
 
 describe("OpenCode Go multi-endpoint transports", () => {
-  it("declares openai / claude / openai-responses transports", () => {
+  it("declares openai / claude / openai-responses / gemini transports", () => {
     const formats = (PROVIDERS["opencode-go"].transports || []).map((t) => t.format);
-    expect(formats).toEqual(["openai", "claude", "openai-responses"]);
+    expect(formats).toEqual(["openai", "claude", "openai-responses", "gemini"]);
   });
 
   it("resolveTransport picks the endpoint matching the client sourceFormat", () => {

@@ -32,6 +32,11 @@ export default {
     { format: "openai", baseUrl: "https://opencode.ai/zen/go/v1/chat/completions", auth: { combined: true, header: "Authorization", scheme: "bearer" } },
     { format: "claude", baseUrl: "https://opencode.ai/zen/go/v1/messages", auth: { combined: true, header: "x-api-key", scheme: "raw", anthropicVersion: true } },
     { format: "openai-responses", baseUrl: "https://opencode.ai/zen/go/v1/responses", auth: { combined: true, header: "Authorization", scheme: "bearer" } },
+    // Gemini-native lane (fork): Gemini 4 Argon is served only on
+    // /inference/go/v1/models/{model}:generateContent — the zen chat/messages/responses
+    // endpoints answer "ModelProtocolUnsupported". The executor appends the
+    // :generateContent / :streamGenerateContent?alt=sse suffix per request.
+    { format: "gemini", baseUrl: "https://opencode.ai/inference/go/v1/models", auth: { combined: true, header: "x-goog-api-key", scheme: "raw" } },
   ],
   // supportedFormats follow the endpoint table in https://opencode.ai/docs/go/
   models: [
@@ -80,6 +85,8 @@ export default {
     { id: "gpt-6-luna", name: "GPT 6 Luna", targetFormat: "openai-responses", supportedFormats: ["openai-responses"] },
     { id: "muse-spark-1.2-contributor", name: "Muse Spark 1.2 Contributor", targetFormat: "openai-responses", supportedFormats: ["openai-responses"] },
     { id: "muse-spark-1.3-contributor", name: "Muse Spark 1.3 Contributor", targetFormat: "openai-responses", supportedFormats: ["openai-responses"] },
+    // Gemini-native only (fork): see the "gemini" transport above.
+    { id: "gemini-4-argon-contributor", name: "Gemini 4 Argon Contributor", targetFormat: "gemini", supportedFormats: ["gemini"] },
   ],
   // Live catalogue; ids outside this curated list get their endpoint lane from the
   // family regex in providers/models/helpers.js (opencodeFamilyFormats).

@@ -41,6 +41,14 @@ function translatedSession(sessionId, clientTool) {
   return `ses_${digest}`;
 }
 
+// Gemini-native per the provider registry (gemini-4-argon-contributor): served on
+// /inference/go/v1/models/{model}:generateContent, never on the zen OpenAI lanes.
+const GEMINI_BASE_URL = "https://opencode.ai/inference/go/v1/models";
+const stripLevelSuffix = (model) => (typeof model === "string" ? model.replace(/\([^()]+\)\s*$/, "").trim() : model);
+function isGeminiModel(model) {
+  return getModelTargetFormat("opencode-go", model) === FORMATS.GEMINI;
+}
+
 // Responses-only per the provider registry (grok-4.6, gpt-5.6-luna, muse-spark, …),
 // including the family-regex fallback for passthrough ids — never hardcode model ids here.
 function isResponsesModel(model) {
@@ -116,6 +124,12 @@ export class OpenCodeGoExecutor extends DefaultExecutor {
   }
 
   buildUrl(model, stream, urlIndex = 0, credentials = null) {
+    // Gemini-native models: transport baseUrl is the /models collection, the
+    // method suffix depends on stream (mirrors DefaultExecutor's gemini branch).
+    if (isGeminiModel(model)) {
+      const id = encodeURIComponent(stripLevelSuffix(model));
+      return `${GEMINI_BASE_URL}/${id}:${stream ? "streamGenerateContent?alt=sse" : "generateContent"}`;
+    }
     // Muse Spark lives on /responses even when a stale runtimeTransport leaks in.
     if (isResponsesModel(model)) return RESPONSES_BASE_URL;
     return super.buildUrl(model, stream, urlIndex, credentials);
@@ -143,7 +157,12 @@ export class OpenCodeGoExecutor extends DefaultExecutor {
   }
 
   buildHeaders(credentials, stream = true, url, model) {
-    const headers = super.buildHeaders(credentials || {}, stream, url, model);
+    // Gemini lane authenticates with x-goog-api-key; force that transport's auth even
+    // if the sourceFormat-matched runtimeTransport (e.g. openai) was attached.
+    const geminiCreds = isGeminiModel(model) && credentials
+      ? { ...credentials, runtimeTransport: { format: "gemini", baseUrl: GEMINI_BASE_URL, auth: { combined: true, header: "x-goog-api-key", scheme: "raw" } } }
+      : credentials;
+    const headers = super.buildHeaders(geminiCreds || {}, stream, url, model);
     const prepared = credentials?.[SESSION_FIELD];
     if (prepared) {
       headers[SESSION_HEADER] = prepared;
@@ -156,6 +175,13 @@ export class OpenCodeGoExecutor extends DefaultExecutor {
   }
 
   transformRequest(model, body, stream, credentials) {
+    // Gemini-native body: skip the OpenAI-shaped executor tweaks (reasoning_content
+    // injection, param stripping) and drop the body-level model the URL already carries.
+    if (isGeminiModel(model || body?.model)) {
+      if (!body || typeof body !== "object") return body;
+      const { model: _m, ...rest } = body;
+      return rest;
+    }
     const out = super.transformRequest(model, body);
     if (!isResponsesModel(model || body?.model)) return out;
     const normalized = normalizeResponsesInput(out.input);
