@@ -28,12 +28,12 @@ describe("gemini-4-argon capabilities", () => {
     // Patterns match in order, so gemini-4 needs its own entry above *gemini-3*.
     const c4 = getCapabilitiesForModel("gemini", "gemini-4-argon");
     const c3 = getCapabilitiesForModel("gemini", "gemini-3.8-flash");
-    // The distinguishing claim: audio/video are not documented for Argon yet.
-    expect(c4.audioInput).toBe(false);
-    expect(c4.videoInput).toBe(false);
-    // ...while the 3.x line does claim them, proving the patterns differ.
-    expect(c3.audioInput).toBe(true);
-    expect(c3.videoInput).toBe(true);
+    // v0.5.104 merge: upstream's Argon entry claims audio/video input (kept).
+    // The distinguishing claim is now the live-verified 32K output limit,
+    // which differs from the 3.x line's 64K.
+    expect(c4.maxOutput).toBe(32768);
+    expect(c3.maxOutput).toBe(65536);
+    expect(c4.thinkingCanDisable).toBe(false);
   });
 
   it("leaves the rest of the Gemini line untouched", () => {
