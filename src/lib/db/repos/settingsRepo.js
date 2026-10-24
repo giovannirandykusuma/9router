@@ -61,6 +61,9 @@ const DEFAULT_SETTINGS = {
   // Exact canonical provider/model keys mapped to total context-window tokens.
   // The model-context API writes the entire map so reset can truly delete keys.
   contextWindowOverrides: {},
+  // User-authored system prompt, injected independently of the built-in savers.
+  customPromptEnabled: false,
+  customPrompt: "",
   pxpipeEnabled: false,
   pxpipeAutoInstall: true,
   pxpipeMinChars: 25000,

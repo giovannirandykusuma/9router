@@ -163,6 +163,8 @@ export async function POST(request) {
       });
     }
 
+    const existingProvider = existing.providers["9router"] || {};
+
     existing.providers["9router"] = {
       ...previousProvider,
       baseUrl: normalizedBaseUrl,
