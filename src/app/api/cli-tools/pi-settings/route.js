@@ -130,9 +130,17 @@ export async function POST(request) {
 
     if (!existing.providers) existing.providers = {};
 
+    const existingProvider = existing.providers["9router"] || {};
+    const prevModels = new Map(
+      (Array.isArray(existingProvider.models) ? existingProvider.models : [])
+        .map((m) => (typeof m === "string" ? { id: m } : m))
+        .filter((m) => m?.id)
+        .map((m) => [m.id, m])
+    );
+
     const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
-    const previousProvider = existing.providers["9router"] || {};
-    const previousModels = new Map((previousProvider.models || []).map(m => [m.id, m]));
+    const previousProvider = existingProvider;
+    const previousModels = prevModels;
     const selected = Array.isArray(rawBody.models) && rawBody.models.length > 0
       ? rawBody.models : [model || "provider/model-id"];
     const validLimit = value => Number.isFinite(value) && value > 0;
@@ -157,13 +165,12 @@ export async function POST(request) {
       }
       modelList.push({
         ...merged,
-        name: merged.name || id,
+        // Dashboard name === id is a placeholder, not an explicit rename.
+        name: supplied.name && supplied.name !== id ? supplied.name : (previousModels.get(id)?.name || id),
         contextWindow: validLimit(merged.contextWindow) ? merged.contextWindow : caps.contextWindow,
         maxTokens: validLimit(merged.maxTokens) ? merged.maxTokens : caps.maxOutput,
       });
     }
-
-    const existingProvider = existing.providers["9router"] || {};
 
     existing.providers["9router"] = {
       ...previousProvider,

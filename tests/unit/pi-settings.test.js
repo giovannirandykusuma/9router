@@ -47,6 +47,24 @@ describe("Pi settings POST", () => {
       "9router": { baseUrl: "http://localhost:20128/v1", authHeader: true, headers: { "X-Custom": "test" } } } });
   });
 
+  it("preserves a hand-set name when the dashboard sends name equal to id", async () => {
+    const id = "ag/gemini-3.8-flash";
+    io.readFile.mockResolvedValue(JSON.stringify({ providers: { "9router": { models: [
+      { id, name: "My hand-set name", contextWindow: 524288, maxTokens: 32768, reasoning: true },
+    ] } } }));
+    expect((await save({ models: [{ id, name: id, contextWindow: 600000, maxTokens: 40000 }] })).status).toBe(200);
+    expect(models()[0]).toMatchObject({ id, name: "My hand-set name", contextWindow: 600000, maxTokens: 40000, reasoning: true });
+  });
+
+  it("accepts an explicit display-name change", async () => {
+    const id = "ag/gemini-3.8-flash";
+    io.readFile.mockResolvedValue(JSON.stringify({ providers: { "9router": { models: [
+      { id, name: "Old name", contextWindow: 524288, maxTokens: 32768 },
+    ] } } }));
+    expect((await save({ models: [{ id, name: "New name" }] })).status).toBe(200);
+    expect(models()[0]).toMatchObject({ id, name: "New name", contextWindow: 524288, maxTokens: 32768 });
+  });
+
   it("uses registered limits for newly selected provider/model IDs", async () => {
     const caps = getCapabilitiesForModel("antigravity", "gemini-3.8-flash");
     expect((await save({ models: ["ag/gemini-3.8-flash"] })).status).toBe(200);

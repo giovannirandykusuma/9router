@@ -1,6 +1,6 @@
 # Personal OAuth reliability fork
 
-This branch is based on upstream **v0.5.86** (`39e36d3d`). It is an independently maintained selection of upstream pull-request changes, not an upstream release or an endorsement of unmerged PRs.
+This branch started from upstream **v0.5.86** (`39e36d3d`) and now includes upstream **v0.5.111** (`3a978a63`) via merge commits. It is an independently maintained selection of upstream pull-request changes, not an upstream release or an endorsement of unmerged PRs.
 
 ## Included changes
 
@@ -14,7 +14,7 @@ This branch is based on upstream **v0.5.86** (`39e36d3d`). It is an independentl
 | [#4078](https://github.com/decolua/9router/pull/4078) | Opt-in per-conversation account selection, with integration coverage for exclusions, model locks, preferred accounts, and interleaving. |
 | [#3386](https://github.com/decolua/9router/pull/3386) | Codex SSE context overflow detection and non-fallback HTTP 413. **Excludes unrelated model-list changes.** |
 | [#2667](https://github.com/decolua/9router/pull/2667) | One same-account retry for specifically rejected encrypted reasoning history. |
-| [#4278](https://github.com/decolua/9router/pull/4278) | Preserve Pi model limits, metadata, and custom provider settings. |
+| [#4278](https://github.com/decolua/9router/pull/4278) | Preserve Pi model limits, metadata, and custom provider settings. **v0.5.111 merge:** retain model/alias/nested-combo capability defaults instead of upstream's hardcoded fallback limits, while adopting upstream's preservation of hand-set display names when the dashboard sends `name === id`. Preserve string-form existing model entries as well. Regression tests cover ID-only saves, explicit cap/name edits, provider metadata, aliases, nested combos, malformed configs, and the placeholder-name case. |
 | [#3556](https://github.com/decolua/9router/pull/3556) | Adapted first-byte watchdog with lifecycle tests. **Keeps the existing 200-second prefill deadline**, not the proposed 30 seconds. Clears timers on EOF/cancel and only switches to stall timing after nonempty bytes. |
 | [#3595](https://github.com/decolua/9router/pull/3595) | Model-context dashboard, persisted exact provider/model overrides, capability propagation, validation, and reset-to-current-default semantics. **Excludes glob/global overrides and all unrelated compatibility, statistics, schema, and retry changes.** |
 | [#4241](https://github.com/decolua/9router/pull/4241) | Per-API-key limits (RPM, daily/monthly tokens incl. input/output, monthly requests, monthly USD budget; HTTP 429 + `Retry-After`) and usage meters on Endpoint/Usage pages. **Merged with upstream v0.5.99 per-key access control** (both column sets in `apiKeys`, both survive export/import). Also wired into the System One handler, which postdates the PR. |
