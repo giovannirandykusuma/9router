@@ -21,6 +21,7 @@ vi.mock("@/lib/localDb", () => ({ getSettings: async () => mocks.settings }));
 vi.mock("@/lib/apiKeyLimits.js", () => ({ enforceApiKeyLimits: mocks.enforceApiKeyLimits }));
 vi.mock("../../src/sse/services/keyAccess.js", () => ({
   getKeyAccessContext: async () => null,
+  getAllowedConnectionIdsForProvider: async () => null,
   enforceKeyAccess: async () => null,
 }));
 vi.mock("../../src/sse/services/model.js", () => ({

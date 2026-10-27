@@ -32,6 +32,7 @@ npx --no-install vitest run \
   unit/opencode-go-gemini-argon.test.js \
   unit/opencode-go-models.test.js \
   unit/key-access.test.js \
+  unit/key-account-isolation.test.js \
   unit/key-access-handlers.test.js \
   unit/key-access-migration.test.js \
   unit/image-edits-endpoint.test.js \

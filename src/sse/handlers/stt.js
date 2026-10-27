@@ -5,7 +5,7 @@ import {
 import { getSettings, getCustomModels } from "@/lib/localDb";
 import { enforceApiKeyLimits } from "@/lib/apiKeyLimits.js";
 import { getModelInfo } from "../services/model.js";
-import { getKeyAccessContext, enforceKeyAccessResolved } from "../services/keyAccess.js";
+import { getKeyAccessContext, enforceKeyAccessResolved, getAllowedConnectionIdsForProvider } from "../services/keyAccess.js";
 import { handleSttCore } from "open-sse/handlers/sttCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
@@ -70,8 +70,15 @@ export async function handleStt(request) {
   if (provider === "codex" && model !== "transcribe") return errorResponse(400, "Use model cx/transcribe for Codex STT");
 
   // Per-key access control: checked before any credential lookup.
-  const keyAccessDenied = await enforceKeyAccessResolved(await getKeyAccessContext(request), modelStr, provider, model);
+  const keyAccess = await getKeyAccessContext(request);
+  const keyAccessDenied = await enforceKeyAccessResolved(keyAccess, modelStr, provider, model);
   if (keyAccessDenied) return keyAccessDenied;
+
+  const allowedConnectionIds = await getAllowedConnectionIdsForProvider(keyAccess, provider);
+  if (allowedConnectionIds && allowedConnectionIds.size === 0) {
+    log.warn("AUTH", `key-access: provider "${provider}" is not allowed for this key`);
+    return errorResponse(HTTP_STATUS.FORBIDDEN, `This API key is not allowed to use provider "${provider}"`);
+  }
 
   log.info("ROUTING", `Provider: ${provider}, Model: ${model}`);
 
@@ -79,6 +86,7 @@ export async function handleStt(request) {
 
   // noAuth providers
   if (!CREDENTIALED_PROVIDERS.has(provider)) {
+    if (allowedConnectionIds) return errorResponse(HTTP_STATUS.FORBIDDEN, "This API key requires a selected provider account");
     const result = await handleSttCore({ provider, model, formData, sttConfig: AI_PROVIDERS[provider]?.sttConfig, transport: modelTransport });
     if (result.success) return result.response;
     return errorResponse(result.status || HTTP_STATUS.BAD_GATEWAY, result.error || "STT failed");
@@ -90,7 +98,7 @@ export async function handleStt(request) {
   let lastStatus = null;
 
   while (true) {
-    let credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
+    let credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { allowedConnectionIds });
 
     if (!credentials || credentials.allRateLimited) {
       if (credentials?.allRateLimited) {

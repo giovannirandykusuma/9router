@@ -92,7 +92,7 @@ export async function createApiKey(name, machineId, limits = {}) {
     machineId,
     isActive: true,
     createdAt: new Date().toISOString(),
-    access: { restricted: false, allow: [] },
+    access: { ...KEY_ACCESS_UNRESTRICTED },
     ...normalizeApiKeyLimits(limits),
   };
   const cols = keyAccessToColumns(KEY_ACCESS_UNRESTRICTED);

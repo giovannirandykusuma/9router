@@ -10,7 +10,7 @@ import { getSettings } from "@/lib/localDb";
 import { PROVIDER_MODELS } from "@/shared/constants/models";
 import { GEMINI_NATIVE_TTS_FETCH_TIMEOUT_MS } from "open-sse/config/runtimeConfig.js";
 import { initTranslators } from "open-sse/translator/index.js";
-import { getKeyAccessContext, enforceKeyAccessResolved } from "@/sse/services/keyAccess.js";
+import { getKeyAccessContext, enforceKeyAccessResolved, getAllowedConnectionIdsForProvider } from "@/sse/services/keyAccess.js";
 
 let initialized = false;
 const GEMINI_NATIVE_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models";
@@ -249,7 +249,9 @@ async function forwardGeminiNativeRequest(request, body, model, action) {
 
   // Per-key access control: this path calls Gemini directly (not via handleChat),
   // so restricted keys are checked here, before any credential lookup.
-  const keyAccessDenied = await enforceKeyAccessResolved(await getKeyAccessContext(request), model, "gemini", modelId);
+  const keyAccess = await getKeyAccessContext(request);
+  const keyAccessDenied = await enforceKeyAccessResolved(keyAccess, model, "gemini", modelId);
+  const allowedConnectionIds = await getAllowedConnectionIdsForProvider(keyAccess, "gemini");
   if (keyAccessDenied) return keyAccessDenied;
   const excludeConnectionIds = new Set();
   const bodyText = JSON.stringify(body);
@@ -257,7 +259,7 @@ async function forwardGeminiNativeRequest(request, body, model, action) {
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials("gemini", excludeConnectionIds, modelId);
+    const credentials = await getProviderCredentials("gemini", excludeConnectionIds, modelId, { allowedConnectionIds });
     if (!credentials || credentials.allRateLimited) {
       console.log(`[GEMINI_NATIVE] exhausted model=${modelId} status=${lastStatus || Number(credentials?.lastErrorCode) || 503} error=${lastError || credentials?.lastError || "No active credentials for provider: gemini"}`);
       return Response.json(

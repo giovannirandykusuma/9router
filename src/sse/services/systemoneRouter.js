@@ -1,5 +1,6 @@
 import { getModelInfo } from "../services/model.js";
 import { getProviderCredentials } from "../services/auth.js";
+import { enforceKeyAccessResolved, getAllowedConnectionIdsForProvider } from "./keyAccess.js";
 import { checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { handleSystemoneCore } from "open-sse/handlers/systemoneCore.js";
 import {
@@ -27,6 +28,7 @@ import {
  * @returns {Promise<{ choice: string, confidence: number|null, probabilities: Record<string, number>|null } | null>}
  */
 export async function resolveSmartChoice({
+  keyAccess = null,
   body,
   models,
   routerModel = DEFAULT_SYSTEMONE_ROUTER_MODEL,
@@ -56,7 +58,9 @@ export async function resolveSmartChoice({
     }
 
     const { provider, model } = modelInfo;
-    const credentials = await getProviderCredentials(provider, new Set(), model);
+    if (await enforceKeyAccessResolved(keyAccess, targetModel, provider, model)) return null;
+    const allowedConnectionIds = await getAllowedConnectionIdsForProvider(keyAccess, provider);
+    const credentials = await getProviderCredentials(provider, new Set(), model, { allowedConnectionIds });
     if (!credentials || credentials.allRateLimited) {
       log?.warn?.("COMBO", `smart-router: no credentials available for router provider "${provider}"`);
       return null;

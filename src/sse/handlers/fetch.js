@@ -14,7 +14,13 @@ import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { handleComboChat, getComboModelsFromData } from "open-sse/services/combo.js";
-import { getKeyAccessContext, enforceKeyAccessProvider } from "../services/keyAccess.js";
+import {
+  getKeyAccessContext,
+  enforceKeyAccessProvider,
+  pruneComboModelsForKey,
+  getAllowedConnectionIdsForProvider,
+  keyAccessDeniedResponse,
+} from "../services/keyAccess.js";
 import { assertPublicUrlResolved } from "@/shared/utils/ssrfGuard.js";
 
 /**
@@ -99,17 +105,26 @@ export async function handleFetch(request) {
 
   // Per-key access control: the provider IS the model here, so a
   // restricted key needs the provider id (or the combo) on its list.
-  const keyAccessDenied = await enforceKeyAccessProvider(await getKeyAccessContext(request), providerInput, comboModels);
+  const keyAccess = await getKeyAccessContext(request);
+  const keyAccessDenied = await enforceKeyAccessProvider(keyAccess, providerInput, comboModels);
   if (keyAccessDenied) return keyAccessDenied;
   if (comboModels) {
+    let activeModels = comboModels;
+    if (keyAccess) {
+      const pruned = await pruneComboModelsForKey(keyAccess, comboModels, providerInput, true);
+      if (!pruned || pruned.length === 0) {
+        return keyAccessDeniedResponse(keyAccess, providerInput);
+      }
+      activeModels = pruned;
+    }
     const comboStrategies = settings.comboStrategies || {};
     const comboStrategy = comboStrategies[providerInput]?.fallbackStrategy || settings.comboStrategy || "fallback";
     const comboStickyLimit = settings.comboStickyRoundRobinLimit;
-    log.info("FETCH", `Combo "${providerInput}" with ${comboModels.length} providers (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
+    log.info("FETCH", `Combo "${providerInput}" with ${activeModels.length} providers (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
     return handleComboChat({
       body,
-      models: comboModels,
-      handleSingleModel: (b, m) => handleSingleProviderFetch(b, m, request, apiKey, settings),
+      models: activeModels,
+      handleSingleModel: (b, m) => handleSingleProviderFetch(b, m, request, apiKey, settings, keyAccess),
       log,
       comboName: providerInput,
       comboStrategy,
@@ -117,10 +132,10 @@ export async function handleFetch(request) {
     });
   }
 
-  return handleSingleProviderFetch(body, providerInput, request, apiKey, settings);
+  return handleSingleProviderFetch(body, providerInput, request, apiKey, settings, keyAccess);
 }
 
-async function handleSingleProviderFetch(body, providerInput, request, apiKey, settings) {
+async function handleSingleProviderFetch(body, providerInput, request, apiKey, settings, keyAccess = null) {
   const targetUrl = body.url;
   const format = body.format;
   const maxCharacters = body.max_characters;
@@ -130,6 +145,12 @@ async function handleSingleProviderFetch(body, providerInput, request, apiKey, s
   if (!resolvedProvider) {
     log.warn("FETCH", "Unknown provider", { provider: providerInput });
     return errorResponse(HTTP_STATUS.BAD_REQUEST, `Unknown provider: ${providerInput}`);
+  }
+
+  const allowedConnectionIds = await getAllowedConnectionIdsForProvider(keyAccess, providerId);
+  if (allowedConnectionIds && allowedConnectionIds.size === 0) {
+    log.warn("AUTH", `key-access: provider "${providerId}" is not allowed for this key`);
+    return errorResponse(HTTP_STATUS.FORBIDDEN, `This API key is not allowed to use provider "${providerId}"`);
   }
 
   const providerConfig = resolvedProvider.fetchConfig;
@@ -146,6 +167,7 @@ async function handleSingleProviderFetch(body, providerInput, request, apiKey, s
 
   // No-auth fetch path (kept for parity though no current fetch provider sets noAuth)
   if (resolvedProvider.noAuth) {
+    if (allowedConnectionIds && !allowedConnectionIds.has("noauth")) return keyAccessDeniedResponse(keyAccess, providerInput);
     log.info("AUTH", `\x1b[32m${providerId} no-auth mode\x1b[0m`);
     const result = await handleFetchCore({
       url: targetUrl,
@@ -175,7 +197,7 @@ async function handleSingleProviderFetch(body, providerInput, request, apiKey, s
   const fetchLockKey = `webfetch:${providerId}`;
 
   while (true) {
-    const credentials = await getProviderCredentials(providerId, excludeConnectionIds, fetchLockKey);
+    const credentials = await getProviderCredentials(providerId, excludeConnectionIds, fetchLockKey, { allowedConnectionIds });
 
     if (!credentials || credentials.allRateLimited) {
       if (credentials?.allRateLimited) {

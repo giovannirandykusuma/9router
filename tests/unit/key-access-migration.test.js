@@ -82,6 +82,19 @@ describe("apiKeys access columns: upgrade from the previous schema", () => {
     expect((await db.getApiKeyById(created.id)).access).toEqual({ restricted: false, allow: [] });
   });
 
+  it("preserves provider/account scopes across DB updates and backup restore", async () => {
+    writeLegacyDb(tempDir);
+    const { db } = await boot();
+    const access = { restricted: true, allow: ["cx/gpt-5"], allowedProviders: ["codex"], allowedConnections: ["king"] };
+    await db.updateApiKey("k1", { access });
+    expect((await db.getApiKeyById("k1")).access).toEqual(access);
+    await db.updateApiKey("k1", { name: "kenny", rpmLimit: 15 });
+    expect((await db.getApiKeyById("k1")).access).toEqual(access);
+    const dump = await db.exportDb();
+    await db.importDb(dump);
+    expect((await db.getApiKeyById("k1")).access).toEqual(access);
+  });
+
   it("export/import round-trips access; a backup without access restores unrestricted; malformed access is refused", async () => {
     writeLegacyDb(tempDir);
     const { db } = await boot();

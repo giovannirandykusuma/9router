@@ -8,7 +8,13 @@ import {
 import { getSettings } from "@/lib/localDb";
 import { enforceApiKeyLimits } from "@/lib/apiKeyLimits.js";
 import { getModelInfo, getComboModels } from "../services/model.js";
-import { getKeyAccessContext, enforceKeyAccess } from "../services/keyAccess.js";
+import {
+  getKeyAccessContext,
+  enforceKeyAccess,
+  pruneComboModelsForKey,
+  getAllowedConnectionIdsForProvider,
+  keyAccessDeniedResponse,
+} from "../services/keyAccess.js";
 import { handleImageGenerationCore } from "open-sse/handlers/imageGenerationCore.js";
 import { getImageAdapter } from "open-sse/handlers/imageProviders/index.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
@@ -83,20 +89,29 @@ export async function handleImageRequestBody(request, body) {
   if (!body.prompt) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing required field: prompt");
 
   // Per-key access control: requested target, before combo expansion.
-  const keyAccessDenied = await enforceKeyAccess(await getKeyAccessContext(request), modelStr);
+  const keyAccess = await getKeyAccessContext(request);
+  const keyAccessDenied = await enforceKeyAccess(keyAccess, modelStr);
   if (keyAccessDenied) return keyAccessDenied;
 
   // Combo expansion: model may be a combo name → run fallback/round-robin across models
   const comboModels = await getComboModels(modelStr);
   if (comboModels) {
+    let activeModels = comboModels;
+    if (keyAccess) {
+      const pruned = await pruneComboModelsForKey(keyAccess, comboModels, modelStr);
+      if (!pruned || pruned.length === 0) {
+        return keyAccessDeniedResponse(keyAccess, modelStr);
+      }
+      activeModels = pruned;
+    }
     const comboStrategies = settings.comboStrategies || {};
     const comboStrategy = comboStrategies[modelStr]?.fallbackStrategy || settings.comboStrategy || "fallback";
     const comboStickyLimit = settings.comboStickyRoundRobinLimit;
-    log.info("IMAGE", `Combo "${modelStr}" with ${comboModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
+    log.info("IMAGE", `Combo "${modelStr}" with ${activeModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
     return handleComboChat({
       body,
-      models: comboModels,
-      handleSingleModel: (b, m) => handleSingleModelImage(b, m, { wantsStream, binaryOutput, preferredConnectionId, apiKey, endpoint: url.pathname }),
+      models: activeModels,
+      handleSingleModel: (b, m) => handleSingleModelImage(b, m, { wantsStream, binaryOutput, preferredConnectionId, apiKey, endpoint: url.pathname, keyAccess }),
       log,
       comboName: modelStr,
       comboStrategy,
@@ -104,17 +119,24 @@ export async function handleImageRequestBody(request, body) {
     });
   }
 
-  return handleSingleModelImage(body, modelStr, { wantsStream, binaryOutput, preferredConnectionId, apiKey, endpoint: url.pathname });
+  return handleSingleModelImage(body, modelStr, { wantsStream, binaryOutput, preferredConnectionId, apiKey, endpoint: url.pathname, keyAccess });
 }
 
-async function handleSingleModelImage(body, modelStr, { wantsStream, binaryOutput, preferredConnectionId, apiKey, endpoint } = {}) {
+async function handleSingleModelImage(body, modelStr, { wantsStream, binaryOutput, preferredConnectionId, apiKey, endpoint, keyAccess } = {}) {
   const modelInfo = await getModelInfo(modelStr);
   if (!modelInfo.provider) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid model format");
 
   const { provider, model } = modelInfo;
 
+  const allowedConnectionIds = await getAllowedConnectionIdsForProvider(keyAccess, provider);
+  if (allowedConnectionIds && allowedConnectionIds.size === 0) {
+    log.warn("AUTH", `key-access: provider "${provider}" is not allowed for this key`);
+    return errorResponse(HTTP_STATUS.FORBIDDEN, `This API key is not allowed to use provider "${provider}"`);
+  }
+
   // noAuth providers — no credential needed
   if (NO_AUTH_PROVIDERS.has(provider)) {
+    if (allowedConnectionIds) return keyAccessDeniedResponse(keyAccess, modelStr);
     const result = await handleImageGenerationCore({
       body,
       modelInfo: { provider, model },
@@ -131,7 +153,7 @@ async function handleSingleModelImage(body, modelStr, { wantsStream, binaryOutpu
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { preferredConnectionId });
+    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { preferredConnectionId, allowedConnectionIds });
 
     if (!credentials || credentials.allRateLimited) {
       if (credentials?.allRateLimited) {

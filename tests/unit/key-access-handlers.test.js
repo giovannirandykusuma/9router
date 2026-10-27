@@ -8,14 +8,16 @@ const fx = vi.hoisted(() => ({
     { id: "c1", name: "Main", models: ["openai/model-a", "openai/model-b"] },
   ],
   keys: {},
+  settings: {},
 }));
 const mocks = vi.hoisted(() => ({
   getProviderCredentials: vi.fn(),
   handleChatCore: vi.fn(),
+  handleSystemoneCore: vi.fn(),
 }));
 
 vi.mock("@/lib/localDb", () => ({
-  getSettings: async () => ({ requireApiKey: false, comboStrategy: "fallback" }),
+  getSettings: async () => ({ requireApiKey: false, comboStrategy: "fallback", ...fx.settings }),
   getModelAliases: async () => ({}),
   getComboByName: async (name) => fx.combos.find((c) => c.name === name) || null,
   getProviderNodes: async () => [],
@@ -43,6 +45,7 @@ vi.mock("@/sse/services/tokenRefresh.js", () => ({
   updateProviderCredentials: vi.fn(),
 }));
 vi.mock("open-sse/handlers/chatCore.js", () => ({ handleChatCore: mocks.handleChatCore }));
+vi.mock("open-sse/handlers/systemoneCore.js", () => ({ handleSystemoneCore: mocks.handleSystemoneCore }));
 
 const { handleChat } = await import("../../src/sse/handlers/chat.js");
 const { handleEmbeddings } = await import("../../src/sse/handlers/embeddings.js");
@@ -50,7 +53,7 @@ const { handleImageGeneration } = await import("../../src/sse/handlers/imageGene
 const { handleImageEdit } = await import("../../src/sse/handlers/imageEdit.js");
 const { handleTts } = await import("../../src/sse/handlers/tts.js");
 const { handleStt } = await import("../../src/sse/handlers/stt.js");
-const { handleVideoCreate } = await import("../../src/sse/handlers/videoGeneration.js");
+const { handleVideoCreate, handleVideoGet } = await import("../../src/sse/handlers/videoGeneration.js");
 const { handleSearch } = await import("../../src/sse/handlers/search.js");
 const { handleFetch } = await import("../../src/sse/handlers/fetch.js");
 const { handleSystemone } = await import("../../src/sse/handlers/systemone.js");
@@ -75,6 +78,8 @@ const post = (path, body, k, extra = {}) => new Request(`http://localhost${path}
 
 beforeEach(() => {
   vi.clearAllMocks();
+  fx.settings = {};
+  fx.combos = [{ id: "c1", name: "Main", models: ["openai/model-a", "openai/model-b"] }];
   fx.keys = {
     "sk-open": { id: "o", name: "open", isActive: true, access: { restricted: false, allow: [] } },
     "sk-combo": { id: "c", name: "combo", isActive: true, access: { restricted: true, allow: ["Main"] } },
@@ -133,6 +138,25 @@ describe("chat (/v1/chat/completions, /v1/messages, /v1/responses all use handle
   it("empty-list key: 403 on everything", async () => {
     for (const m of ["Main", "openai/model-a", "openai/model-b"]) expect((await chat(m, "sk-empty")).status).toBe(403);
     expect(mocks.handleChatCore).not.toHaveBeenCalled();
+  });
+  it("carries key scope into nested smart-combo classifier calls", async () => {
+    fx.combos = [
+      { id: "outer", name: "Outer", models: ["Inner"] },
+      { id: "inner", name: "Inner", models: ["codex/model-a", "codex/model-b"] },
+    ];
+    fx.settings = { comboStrategies: { Inner: { fallbackStrategy: "smart", routerModel: "openai/router", sessionSticky: false } } };
+    fx.keys["sk-combo"].access = { restricted: true, allow: ["Outer"], allowedProviders: ["codex"], allowedConnections: ["king"] };
+    await chat("Outer", "sk-combo");
+    expect(mocks.getProviderCredentials).toHaveBeenCalled();
+    expect(mocks.getProviderCredentials.mock.calls.every(([provider, _excluded, _model, options]) => provider === "codex" && options.allowedConnectionIds?.has("king"))).toBe(true);
+    expect(mocks.handleSystemoneCore).not.toHaveBeenCalled();
+  });
+  it("preserves the account scope through combo failover", async () => {
+    fx.keys["sk-combo"].access.allowedProviders = ["openai"];
+    fx.keys["sk-combo"].access.allowedConnections = ["king"];
+    expect((await chat("Main", "sk-combo")).status).toBe(200);
+    expect(mocks.getProviderCredentials.mock.calls.length).toBeGreaterThan(1);
+    for (const args of mocks.getProviderCredentials.mock.calls) expect(args[3]?.allowedConnectionIds).toEqual(new Set(["king"]));
   });
   it("restricted key on an allowed combo still fails over from an erroring member to the next", async () => {
     const r = await chat("Main", "sk-combo");
@@ -193,6 +217,15 @@ describe.each(handlers)("%s handler is wired", (_name, call, allowed, denied) =>
     expect((await r.json()).error.message).toContain(denied);
     expect(mocks.getProviderCredentials).not.toHaveBeenCalled();
   });
+  it("passes the exact account allowlist to credential selection", async () => {
+    fx.keys["sk-media"].access.allowedConnections = ["king"];
+    const r = await call(allowed, "sk-media");
+    expect(r.status).not.toBe(403);
+    expect(mocks.getProviderCredentials).toHaveBeenCalled();
+    for (const args of mocks.getProviderCredentials.mock.calls) {
+      expect(args[3]?.allowedConnectionIds).toEqual(new Set(["king"]));
+    }
+  });
   it("lets a listed model through to the credential lookup", async () => {
     const r = await call(allowed, "sk-media");
     expect(r.status).not.toBe(403);
@@ -204,6 +237,37 @@ describe.each(handlers)("%s handler is wired", (_name, call, allowed, denied) =>
   });
   it("denies everything for the empty-list key", async () => {
     expect((await call(allowed, "sk-empty")).status).toBe(403);
+  });
+});
+
+describe("account scopes on credentialless paths", () => {
+  it("does not let a missing Ollama account fall back to localhost TTS", async () => {
+    fx.keys["sk-media"].access = { restricted: true, allow: [], allowedProviders: ["ollama-local"], allowedConnections: ["deleted-account"] };
+    const response = await handleTts(post("/v1/audio/speech", { model: "ollama-local/tts", input: "test" }, "sk-media"));
+    expect(response.status).not.toBe(200);
+    expect(mocks.getProviderCredentials).toHaveBeenCalledWith("ollama-local", expect.any(Set), "tts", { allowedConnectionIds: new Set(["deleted-account"]) });
+  });
+  it.each([
+    ["tts", () => handleTts(post("/v1/audio/speech", { model: "edge-tts/en-US-AriaNeural", input: "test" }, "sk-media"))],
+    ["image", () => handleImageGeneration(post("/v1/images/generations", { model: "sdwebui/test", prompt: "test" }, "sk-media"))],
+    ["video", () => handleVideoCreate(post("/v1/videos/generations", { model: "veoaifree-web/test", prompt: "test" }, "sk-media"), "generations")],
+  ])("does not bypass account scope for credentialless %s", async (_name, call) => {
+    fx.keys["sk-media"].access = { restricted: true, allow: [], allowedProviders: [], allowedConnections: ["king"] };
+    expect((await call()).status).toBe(403);
+    expect(mocks.getProviderCredentials).not.toHaveBeenCalled();
+  });
+});
+
+describe("video polls fail closed without a verifiable model", () => {
+  it.each(["sk-empty", "sk-b", "sk-media"])("denies %s before credentials", async (key) => {
+    const response = await handleVideoGet(new Request("http://localhost/v1/videos/job?provider=xai", { headers: auth(key) }), "job");
+    expect(response.status).toBe(403);
+    expect(mocks.getProviderCredentials).not.toHaveBeenCalled();
+  });
+  it("retains account scope for provider/account-only policies", async () => {
+    fx.keys["sk-media"].access = { restricted: true, allow: [], allowedProviders: ["xai"], allowedConnections: ["king"] };
+    await handleVideoGet(new Request("http://localhost/v1/videos/job?provider=xai", { headers: auth("sk-media") }), "job");
+    expect(mocks.getProviderCredentials).toHaveBeenCalledWith("xai", null, null, { preferredConnectionId: null, allowedConnectionIds: new Set(["king"]) });
   });
 });
 
