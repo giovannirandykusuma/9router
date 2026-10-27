@@ -20,9 +20,13 @@ export async function createBunSqliteAdapter(filePath) {
     return stmt;
   }
 
-  const checkpointTimer = setInterval(() => {
-    try { db.exec("PRAGMA wal_checkpoint(TRUNCATE)"); } catch {}
-  }, CHECKPOINT_INTERVAL_MS);
+  // PASSIVE never waits for report readers (busy_timeout still protects writes).
+  // Reader-pinned frames remain for a later tick; WAL space is reused. Only
+  // shutdown truncates, so routine maintenance cannot stall gateway streaming.
+  function checkpoint() {
+    try { db.exec("PRAGMA wal_checkpoint(PASSIVE)"); } catch {}
+  }
+  const checkpointTimer = setInterval(checkpoint, CHECKPOINT_INTERVAL_MS);
   if (typeof checkpointTimer.unref === "function") checkpointTimer.unref();
 
   function gracefulClose() {
@@ -53,7 +57,7 @@ export async function createBunSqliteAdapter(filePath) {
       const tx = db.transaction(fn);
       return tx();
     },
-    checkpoint() { try { db.exec("PRAGMA wal_checkpoint(TRUNCATE)"); } catch {} },
+    checkpoint,
     close() {
       clearInterval(checkpointTimer);
       gracefulClose();

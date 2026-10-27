@@ -1,7 +1,7 @@
 import Database from "better-sqlite3";
 import { PRAGMA_SQL } from "../schema.js";
 
-// Periodic checkpoint to keep WAL file small (avoid huge -wal/-shm growth)
+// Periodic checkpoint to recycle committed WAL frames without waiting on readers.
 const CHECKPOINT_INTERVAL_MS = 60 * 1000;
 
 export function createBetterSqliteAdapter(filePath) {
@@ -20,10 +20,13 @@ export function createBetterSqliteAdapter(filePath) {
     return stmt;
   }
 
-  // Truncate WAL periodically so file stays small for backup/copy
-  const checkpointTimer = setInterval(() => {
-    try { db.pragma("wal_checkpoint(TRUNCATE)"); } catch {}
-  }, CHECKPOINT_INTERVAL_MS);
+  // PASSIVE never waits for report readers (busy_timeout still protects writes).
+  // Reader-pinned frames remain for a later tick; WAL space is reused. Only
+  // shutdown truncates, so routine maintenance cannot stall gateway streaming.
+  function checkpoint() {
+    try { db.pragma("wal_checkpoint(PASSIVE)"); } catch {}
+  }
+  const checkpointTimer = setInterval(checkpoint, CHECKPOINT_INTERVAL_MS);
   if (typeof checkpointTimer.unref === "function") checkpointTimer.unref();
 
   function gracefulClose() {
@@ -45,7 +48,7 @@ export function createBetterSqliteAdapter(filePath) {
     all(sql, params = []) { return prepare(sql).all(...params); },
     exec(sql) { return db.exec(sql); },
     transaction(fn) { return db.transaction(fn)(); },
-    checkpoint() { try { db.pragma("wal_checkpoint(TRUNCATE)"); } catch {} },
+    checkpoint,
     close() {
       clearInterval(checkpointTimer);
       gracefulClose();

@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
+import { sealKeyHistory } from "../../usage-reports/attribution.js";
 import { keyAccessFromColumns, keyAccessToColumns } from "@/shared/utils/keyAccess.js";
 import { KEY_ACCESS_UNRESTRICTED } from "@/shared/constants/keyAccess.js";
 
@@ -109,6 +110,7 @@ export async function updateApiKey(id, data) {
   db.transaction(() => {
     const row = db.get(`SELECT * FROM apiKeys WHERE id = ?`, [id]);
     if (!row) return;
+    sealKeyHistory(db, row.key);
     const merged = { ...rowToKey(row), ...data };
     Object.assign(merged, normalizeApiKeyLimits(merged));
     const cols = keyAccessToColumns(merged.access);
@@ -123,8 +125,15 @@ export async function updateApiKey(id, data) {
 
 export async function deleteApiKey(id) {
   const db = await getAdapter();
-  const res = db.run(`DELETE FROM apiKeys WHERE id = ?`, [id]);
-  return (res?.changes ?? 0) > 0;
+  let deleted = false;
+  db.transaction(() => {
+    const row = db.get(`SELECT key FROM apiKeys WHERE id = ?`, [id]);
+    if (!row) return;
+    sealKeyHistory(db, row.key);
+    const res = db.run(`DELETE FROM apiKeys WHERE id = ?`, [id]);
+    deleted = (res?.changes ?? 0) > 0;
+  });
+  return deleted;
 }
 
 export async function validateApiKey(key) {

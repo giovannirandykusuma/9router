@@ -36,6 +36,12 @@ ARG CODEX_CLI_VERSION=
 RUN node scripts/set-cli-fingerprints.mjs "$CLAUDE_CLI_VERSION" "$CODEX_CLI_VERSION"
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
+# Relocate outside /app so missing traced dependencies cannot resolve from the
+# builder's full /app/node_modules. Node 22 normally selects better-sqlite3.
+RUN cp -a /app/.next/standalone /tmp/report-worker-standalone && \
+    node scripts/check-report-worker.mjs /tmp/report-worker-standalone node:sqlite && \
+    node scripts/check-report-worker.mjs /tmp/report-worker-standalone better-sqlite3 && \
+    rm -rf /tmp/report-worker-standalone
 
 FROM ${NODE_IMAGE} AS runner
 ARG ALPINE_MIRROR

@@ -1,5 +1,6 @@
 import { EventEmitter } from "events";
 import { getAdapter } from "../driver.js";
+import { resolveUsageKey } from "../../usage-reports/attribution.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { getMeta, setMeta } from "../helpers/metaStore.js";
 
@@ -244,6 +245,9 @@ export async function saveRequestUsage(entry) {
   try {
     const db = await getAdapter();
 
+    // Capture before asynchronous pricing so a concurrent key rename/delete
+    // cannot erase the identity of a write already being recorded.
+    const identity = resolveUsageKey(db, entry.apiKey, entry.provider);
     if (!entry.timestamp) entry.timestamp = new Date().toISOString();
     entry.cost = await calculateCost(entry.provider, entry.model, entry.tokens);
 
@@ -281,12 +285,12 @@ export async function saveRequestUsage(entry) {
       }
 
       db.run(
-        `INSERT INTO usageHistory(timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO usageHistory(timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta, apiKeyId, apiKeyName) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           entry.timestamp, entry.provider || null, entry.model || null,
           entry.connectionId || null, entry.apiKey || null, entry.endpoint || null,
           promptTokens, completionTokens, entry.cost || 0, entry.status || "ok",
-          stringifyJson(tokens), stringifyJson(entry.meta || {}),
+          stringifyJson(tokens), stringifyJson(entry.meta || {}), identity?.id ?? null, identity?.name ?? null,
         ]
       );
 

@@ -1,5 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { reportWorkerAssets } from "./scripts/usage-report-worker-assets.mjs";
 
 const projectRoot = dirname(fileURLToPath(import.meta.url));
 // CLI bundling needs workspace root so tracing includes hoisted node_modules (slim ~50MB).
@@ -30,6 +31,10 @@ const nextConfig = {
     root: tracingRoot
   },
   outputFileTracingRoot: tracingRoot,
+  outputFileTracingIncludes: {
+    '/api/usage/reports': reportWorkerAssets(projectRoot),
+    '/api/usage/reports/export': reportWorkerAssets(projectRoot),
+  },
   outputFileTracingExcludes: {
     "*": ["./gitbook/**/*"]
   },
