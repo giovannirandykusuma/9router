@@ -127,7 +127,10 @@ export default function UsageReports() {
   }
   const dirty = draft && query && JSON.stringify(draft) !== JSON.stringify(query.filters);
   const overExportLimit = result && result.summary.requests > result.limits.maxExportRows;
-  const formatMetric = (metric) => (value) => formatReportValue(value, metric);
+  const formatMetric = (metric) => (value, row) => <>
+    {formatReportValue(value, metric)}
+    {row.known && metric !== "requests" && row.known[metric] < row.requests && <span className="block text-text-muted">{row.known[metric]} / {row.requests} recorded</span>}
+  </>;
 
   return <section className="flex min-w-0 flex-col gap-5" aria-label="Usage reports">
     <div>

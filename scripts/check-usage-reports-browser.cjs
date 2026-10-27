@@ -80,7 +80,21 @@ function fixture(url) {
     const values = workbook.getWorksheet('Summary & Filters').getSheetValues();
     assert.ok(JSON.stringify(values).includes('Asia/Jakarta'));
     // Match a numeric summary count, never a formatted numeric string.
-    assert.ok(values.some(row => Array.isArray(row) && row.some(v => v === 31)));
+    for (const metric of ['requests', ...metrics]) {
+      const row = values.find(row => row?.[1] === metric);
+      assert.ok(row, `Missing Summary metric ${metric}`);
+      assert.equal(row[2] ?? null, json.summary[metric], `Summary ${metric}`);
+    }
+    const requestSheet = workbook.getWorksheet('Requests');
+    const headers = requestSheet.getRow(1).values;
+    for (const metric of metrics) {
+      const column = headers.indexOf(metric);
+      assert.ok(column > 0, `Missing request metric ${metric}`);
+      const cells = requestSheet.getSheetValues().slice(2).map(row => row[column]).filter(value => typeof value === 'number');
+      const total = cells.length ? cells.reduce((sum, value) => sum + value, 0) : null;
+      if (total === null) assert.equal(json.summary[metric], null);
+      else assert.ok(Math.abs(total - json.summary[metric]) < 1e-9, `Requests reconciliation ${metric}`);
+    }
     assert.ok(!JSON.stringify(workbook.model).includes('synthetic-raw-key'));
     for (const sheet of workbook.worksheets) sheet.eachRow(row => row.eachCell(cell => assert.notEqual(cell.type, ExcelJS.ValueType.Formula)));
   }
