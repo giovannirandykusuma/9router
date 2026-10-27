@@ -24,6 +24,11 @@ afterEach(() => {
 });
 
 for (const period of ["today", "24h", "7d"]) it(`keeps all four key groups distinct in ${period}`, async () => {
+  // This grouping test is not a midnight/rollup-date test. Use a fixed instant
+  // whose UTC/local calendar date agrees in the supported test environments.
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-10-15T12:00:00.000Z"));
+  try {
   for (const [i, k] of keys.entries()) await usage.saveRequestUsage({ apiKey: k.key, provider: i < 2 ? "openai" : "mcp-gateway", model: i < 2 ? "gpt" : "mobbin__search_screens", tokens: {}, timestamp: new Date().toISOString() });
   const rows = Object.values((await usage.getUsageStats(period)).byApiKey);
   expect(rows).toHaveLength(4);
@@ -36,6 +41,7 @@ for (const period of ["today", "24h", "7d"]) it(`keeps all four key groups disti
       expect(row.provider).toBe("mcp-gateway");
     }
   }
+  } finally { vi.useRealTimers(); }
 });
 
 it("names unnamed gateway keys using their id", async () => {
