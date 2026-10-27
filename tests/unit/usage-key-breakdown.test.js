@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { beforeEach, afterEach, it, expect, vi } from "vitest";
+import { SCHEMA_VERSION } from "@/lib/db/schema.js";
 
 let dir, adapter, usage, keys;
 const original = process.env.DATA_DIR;
@@ -73,6 +74,6 @@ it("dashboard routes summarize bounded history by id without raw keys", async ()
     expect(JSON.stringify(body)).not.toContain('"key":');
     const normal = await (await import("@/app/api/keys/usage-summary/route.js")).GET();
     expect((await normal.json()).usage.normal1).toEqual({ requests: 2, totalTokens: 10, lastUsed: now.toISOString() });
-    expect(adapter.get("SELECT value FROM _meta WHERE key = 'schemaVersion'").value).toBe("3");
+    expect(adapter.get("SELECT value FROM _meta WHERE key = 'schemaVersion'").value).toBe(String(SCHEMA_VERSION));
   } finally { vi.useRealTimers(); }
 });

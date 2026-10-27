@@ -22,7 +22,7 @@ export default function UsageReportsCharts({ daily, byModel, timezone }) {
             <XAxis dataKey="date" tick={{ fontSize: 10 }} tickFormatter={(value) => value.slice(5)} />
             <YAxis width={52} tick={{ fontSize: 10 }} />
             <Tooltip contentStyle={{ background: "var(--color-bg, #fff)", borderColor: "var(--color-border, #ddd)", borderRadius: 8 }} />
-            <Line type="monotone" dataKey={metric} name={series[metric]} stroke="var(--color-primary, #f97316)" strokeWidth={2} dot={false} connectNulls={false} isAnimationActive={false} />
+            <Line type="monotone" dataKey={metric} name={series[metric]} stroke="var(--color-primary, #f97316)" strokeWidth={2} dot={daily.length === 1 ? { r: 3 } : false} connectNulls={false} isAnimationActive={false} />
           </LineChart>
         </ResponsiveContainer>
       </div>

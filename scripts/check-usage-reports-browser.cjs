@@ -102,10 +102,22 @@ function fixture(url) {
   for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 1000 });
     await page.getByTestId('report-charts').waitFor();
-    await page.screenshot({ path: path.join(out, `reports-${live ? 'live' : 'mock'}-${width}.png`), fullPage: true });
-    const measure = await page.evaluate(() => ({ viewport: innerWidth, scrollWidth: document.documentElement.scrollWidth, chartCount: document.querySelectorAll('[data-testid="report-charts"] .recharts-wrapper').length }));
+    await page.mouse.move(0, 0);
+    const measure = await page.evaluate(() => {
+      const panel = document.querySelector('.overflow-y-auto.custom-scrollbar');
+      const report = document.querySelector('section[aria-label="Usage reports"]');
+      return { viewport: innerWidth, scrollWidth: document.documentElement.scrollWidth,
+        panel: { scrollWidth: panel.scrollWidth, clientWidth: panel.clientWidth, scrollHeight: panel.scrollHeight },
+        report: { width: report.getBoundingClientRect().width, height: report.getBoundingClientRect().height },
+        chartCount: document.querySelectorAll('[data-testid="report-charts"] .recharts-wrapper').length };
+    });
     assert.ok(measure.scrollWidth <= width, JSON.stringify(measure));
+    assert.ok(measure.panel.scrollWidth <= measure.panel.clientWidth, JSON.stringify(measure));
     assert.equal(measure.chartCount, 2);
+    // Dashboard uses an inner scroller: expand only the capture viewport so all
+    // report content is actually visible, keeping the target width unchanged.
+    await page.setViewportSize({ width, height: Math.ceil(measure.panel.scrollHeight + 200) });
+    await page.getByRole('region', { name: 'Usage reports' }).screenshot({ path: path.join(out, `reports-${live ? 'live' : 'mock'}-${width}.png`) });
     measurements.push(measure);
   }
   if (!live) {

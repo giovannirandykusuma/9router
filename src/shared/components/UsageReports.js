@@ -169,7 +169,7 @@ export default function UsageReports() {
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4" data-testid="report-summary">{METRICS.map(([metric, label]) => <Card key={metric} padding="sm">
         <p className="text-xs text-text-muted">{label}</p>
         <p className="mt-2 break-words text-xl font-semibold tabular-nums" data-testid={`metric-${metric}`}>{formatReportValue(result.summary[metric], metric)}</p>
-        {metric !== "requests" && <p className="mt-1 text-xs text-text-muted">{result.summary.known[metric] ?? 0} / {result.summary.requests} recorded{result.summary.known[metric] < result.summary.requests ? " · partial" : ""}</p>}
+        {metric !== "requests" && <p className="mt-1 text-xs text-text-muted">{result.summary.known[metric] ?? 0} / {result.summary.requests} recorded{result.summary.known[metric] > 0 && result.summary.known[metric] < result.summary.requests ? " · partial" : ""}</p>}
       </Card>)}</div>
       <p className="text-xs text-text-muted">Unknown means not recorded, not zero. Partial totals include only known values. Cached and reasoning tokens are subsets and are not added to total tokens again.</p>
       {result.summary.requests === 0 ? <Card><p className="py-6 text-center text-sm text-text-muted" role="status">No recorded requests match these filters.</p></Card> : <>
