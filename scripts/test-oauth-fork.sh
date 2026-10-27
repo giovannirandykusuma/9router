@@ -43,6 +43,7 @@ npx --no-install vitest run \
   unit/usage-reports.test.js \
   unit/usage-reports-export.test.js \
   unit/usage-reports-auth.test.js \
+  unit/usage-reports-worker.test.js \
   unit/mcp-handler-usage.test.js \
   unit/mcp-gateway-keys-route.test.js \
   unit/mcp-http-session.test.js \
