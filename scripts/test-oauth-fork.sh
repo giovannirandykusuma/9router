@@ -40,6 +40,9 @@ npx --no-install vitest run \
   unit/dashboard-guard.test.js \
   unit/custom-server-peer-headers.test.js \
   unit/usage-key-breakdown.test.js \
+  unit/usage-reports.test.js \
+  unit/usage-reports-export.test.js \
+  unit/usage-reports-auth.test.js \
   unit/mcp-handler-usage.test.js \
   unit/mcp-gateway-keys-route.test.js \
   unit/mcp-http-session.test.js \
