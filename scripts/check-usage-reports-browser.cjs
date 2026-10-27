@@ -51,6 +51,9 @@ function fixture(url) {
   await page.getByLabel('End date', { exact: true }).fill('2026-10-31');
   await page.getByLabel('Timezone', { exact: true }).fill('Asia/Jakarta');
   await page.getByLabel('Inference API key', { exact: true }).selectOption('kenny');
+  await page.getByLabel('Provider', { exact: true }).selectOption('codex');
+  await page.getByLabel('Account', { exact: true }).selectOption('account-test');
+  await page.getByLabel('Exact model', { exact: true }).fill('gpt-test');
   const applied = page.waitForResponse(r => r.url().includes('/api/usage/reports?') && new URL(r.url()).searchParams.get('keyId') === 'kenny');
   await page.getByRole('button', { name: 'Apply filters', exact: true }).click();
   const json = await (await applied).json();
@@ -58,6 +61,9 @@ function fixture(url) {
   assert.equal(await page.getByTestId('metric-requests').textContent(), String(json.summary.requests));
   assert.equal(json.summary.requests, 31);
   assert.equal(json.filters.timezone, 'Asia/Jakarta');
+  assert.equal(json.filters.provider, 'codex');
+  assert.equal(json.filters.connectionId, 'account-test');
+  assert.equal(json.filters.model, 'gpt-test');
   assert.equal(json.daily.reduce((sum, row) => sum + row.requests, 0), 31);
   assert.equal(json.byModel.reduce((sum, row) => sum + row.requests, 0), 31);
   assert.equal(await page.getByTestId('report-requests').locator('tbody tr').count(), 25);
@@ -99,26 +105,124 @@ function fixture(url) {
     for (const sheet of workbook.worksheets) sheet.eachRow(row => row.eachCell(cell => assert.notEqual(cell.type, ExcelJS.ValueType.Formula)));
   }
   const measurements = [];
-  for (const width of [1440, 390]) {
-    await page.setViewportSize({ width, height: 1000 });
-    await page.getByTestId('report-charts').waitFor();
-    await page.mouse.move(0, 0);
-    const measure = await page.evaluate(() => {
-      const panel = document.querySelector('.overflow-y-auto.custom-scrollbar');
-      const report = document.querySelector('section[aria-label="Usage reports"]');
-      return { viewport: innerWidth, scrollWidth: document.documentElement.scrollWidth,
-        panel: { scrollWidth: panel.scrollWidth, clientWidth: panel.clientWidth, scrollHeight: panel.scrollHeight },
-        report: { width: report.getBoundingClientRect().width, height: report.getBoundingClientRect().height },
-        chartCount: document.querySelectorAll('[data-testid="report-charts"] .recharts-wrapper').length };
+  const measureReports = () => {
+    const report = document.querySelector('section[aria-label="Usage reports"]');
+    // Sidebar navs share these classes. Only the report's own ancestor is valid.
+    const panel = report.closest('.overflow-y-auto.custom-scrollbar');
+    if (!panel || !panel.closest('main')) throw new Error('Reports main scroller not found');
+    const rect = element => {
+      const { x, y, width, height, top, right, bottom, left } = element.getBoundingClientRect();
+      return { x, y, width, height, top, right, bottom, left };
+    };
+    const bounds = rect(report);
+    const contains = (outer, inner) => inner.left >= outer.left && inner.right <= outer.right && inner.top >= outer.top && inner.bottom <= outer.bottom;
+    const viewport = { left: 0, top: 0, right: innerWidth, bottom: innerHeight };
+    const ancestors = [];
+    for (let element = report.parentElement; element; element = element.parentElement) {
+      const style = getComputedStyle(element);
+      const box = rect(element);
+      const clip = { left: box.left + element.clientLeft, top: box.top + element.clientTop };
+      clip.right = clip.left + element.clientWidth;
+      clip.bottom = clip.top + element.clientHeight;
+      const clipsX = /auto|scroll|hidden|clip/.test(style.overflowX);
+      const clipsY = /auto|scroll|hidden|clip/.test(style.overflowY);
+      ancestors.push({ tag: element.tagName, className: element.className, overflowX: style.overflowX, overflowY: style.overflowY, clip,
+        containsReport: (!clipsX || (bounds.left >= clip.left && bounds.right <= clip.right)) && (!clipsY || (bounds.top >= clip.top && bounds.bottom <= clip.bottom)) });
+    }
+    const buttons = [...report.querySelectorAll('button')].filter(button => ['Previous', 'Next'].includes(button.textContent.trim()));
+    const pagination = buttons.map(button => {
+      const box = rect(button);
+      const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+      const style = getComputedStyle(button);
+      return { label: button.textContent.trim(), rect: box, disabled: button.disabled,
+        visible: box.width > 0 && box.height > 0 && style.visibility === 'visible' && style.display !== 'none' && contains(viewport, box) && contains(bounds, box) && (hit === button || button.contains(hit)) };
     });
-    assert.ok(measure.scrollWidth <= width, JSON.stringify(measure));
-    assert.ok(measure.panel.scrollWidth <= measure.panel.clientWidth, JSON.stringify(measure));
-    assert.equal(measure.chartCount, 2);
-    // Dashboard uses an inner scroller: expand only the capture viewport so all
-    // report content is actually visible, keeping the target width unchanged.
-    await page.setViewportSize({ width, height: Math.ceil(measure.panel.scrollHeight + 200) });
-    await page.getByRole('region', { name: 'Usage reports' }).screenshot({ path: path.join(out, `reports-${live ? 'live' : 'mock'}-${width}.png`) });
-    measurements.push(measure);
+    const sections = ['report-charts', 'report-accounts', 'report-requests'].map(id => {
+      const element = report.querySelector(`[data-testid="${id}"]`);
+      // Tables may scroll horizontally by design; measure their visible wrapper.
+      const box = rect(id === 'report-charts' ? element : element.closest('[role="region"]'));
+      return { id, rect: box, visible: box.width > 0 && box.height > 0 && contains(viewport, box) && contains(bounds, box) };
+    });
+    return { viewport: innerWidth, viewportHeight: innerHeight, scrollWidth: document.documentElement.scrollWidth,
+      panel: { tag: panel.tagName, inMain: true, containsReport: panel.contains(report), scrollWidth: panel.scrollWidth, clientWidth: panel.clientWidth, scrollHeight: panel.scrollHeight, clientHeight: panel.clientHeight, scrollTop: panel.scrollTop, rect: rect(panel) },
+      report: bounds, fullyVisible: contains(viewport, bounds) && ancestors.every(ancestor => ancestor.containsReport), ancestors, pagination, sections,
+      chartCount: report.querySelectorAll('[data-testid="report-charts"] .recharts-wrapper').length,
+      visibleTooltips: [...report.querySelectorAll('.recharts-tooltip-wrapper')].filter(element => getComputedStyle(element).visibility !== 'hidden' && getComputedStyle(element).display !== 'none').length,
+      devBadgeVisible: [...document.querySelectorAll('nextjs-portal')].some(element => element.getBoundingClientRect().width > 0 && getComputedStyle(element).display !== 'none') };
+  };
+  // Capture-only: no product config change, and no dev chrome over report content.
+  const captureStyle = await page.addStyleTag({ content: 'nextjs-portal { display: none !important; }' });
+  try {
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.getByTestId('report-charts').waitFor();
+      await page.evaluate(async () => { await document.fonts.ready; });
+      // Recharts updates through ResizeObserver/React after the viewport resize.
+      // Wait for its real SVG layout, rather than measuring stale desktop widths.
+      await page.waitForFunction(() => {
+        const charts = [...document.querySelectorAll('[data-testid="report-charts"] .recharts-wrapper')];
+        return charts.length === 2 && charts.every(chart => {
+          const container = chart.closest('.recharts-responsive-container');
+          return chart.getBoundingClientRect().width > 0 && Math.abs(chart.getBoundingClientRect().width - container.getBoundingClientRect().width) < 1;
+        });
+      });
+      const afterResize = await page.evaluate(measureReports);
+      // Preserve tooltip coordinates as resize-regression evidence. Hidden
+      // tooltips may retain desktop offsets, but must not overflow the main panel.
+      const resizeOverflow = await page.evaluate(() => {
+        const report = document.querySelector('section[aria-label="Usage reports"]');
+        const panel = report.closest('.overflow-y-auto.custom-scrollbar');
+        return [...report.querySelectorAll('.recharts-tooltip-wrapper')].map(element => ({
+          selector: '.recharts-tooltip-wrapper', visibility: getComputedStyle(element).visibility,
+          x: element.getBoundingClientRect().x, right: element.getBoundingClientRect().right,
+          panelRight: panel.getBoundingClientRect().right,
+        }));
+      });
+      assert.ok(afterResize.panel.scrollWidth <= afterResize.panel.clientWidth, JSON.stringify(afterResize));
+      await page.mouse.move(0, 0);
+      const original = await page.evaluate(measureReports);
+      assert.ok(original.panel.clientWidth > 0 && original.panel.clientHeight > 0);
+      assert.ok(original.scrollWidth <= width, JSON.stringify(original));
+      assert.ok(original.panel.scrollWidth <= original.panel.clientWidth, JSON.stringify(original));
+      // Include the real main scroller's entire content plus all surrounding chrome.
+      // Keep the responsive width unchanged; do not rely on locator screenshots to
+      // paint content outside a clipped inner scroller (they can silently be blank).
+      await page.setViewportSize({ width, height: Math.ceil(original.panel.scrollHeight + original.viewportHeight - original.panel.clientHeight + 32) });
+      await page.evaluate(async () => {
+        const report = document.querySelector('section[aria-label="Usage reports"]');
+        for (let element = report.parentElement; element; element = element.parentElement) { element.scrollTop = 0; element.scrollLeft = 0; }
+        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      });
+      await page.mouse.move(0, 0);
+      const measure = await page.evaluate(measureReports);
+      assert.equal(measure.viewport, width);
+      assert.ok(measure.scrollWidth <= width, JSON.stringify(measure));
+      assert.ok(measure.panel.scrollWidth <= measure.panel.clientWidth, JSON.stringify(measure));
+      assert.ok(measure.panel.scrollHeight <= measure.panel.clientHeight, JSON.stringify(measure));
+      assert.ok(measure.report.width > 0 && measure.report.height > 0);
+      assert.equal(measure.chartCount, 2);
+      assert.equal(measure.fullyVisible, true, JSON.stringify(measure));
+      assert.deepEqual(measure.pagination.map(button => button.label), ['Previous', 'Next']);
+      assert.ok(measure.pagination.every(button => button.visible), JSON.stringify(measure.pagination));
+      assert.ok(measure.sections.every(section => section.visible), JSON.stringify(measure.sections));
+      assert.equal(measure.devBadgeVisible, false);
+      assert.equal(measure.visibleTooltips, 0);
+      const file = path.join(out, `reports-${live ? 'live' : 'mock'}-${width}.png`);
+      await page.getByRole('region', { name: 'Usage reports', exact: true }).screenshot({ path: file, animations: 'disabled', scale: 'css' });
+      const png = await fs.readFile(file);
+      assert.equal(png.subarray(0, 8).toString('hex'), '89504e470d0a1a0a');
+      const dimensions = { width: png.readUInt32BE(16), height: png.readUInt32BE(20) };
+      assert.equal(dimensions.width, Math.ceil(measure.report.width), 'PNG width must match full report');
+      assert.equal(dimensions.height, Math.ceil(measure.report.height), 'PNG height must match full report');
+      const after = await page.evaluate(measureReports);
+      assert.deepEqual(after.report, measure.report, 'Screenshot must not move or resize the report');
+      assert.equal(after.fullyVisible, true);
+      assert.ok(after.pagination.every(button => button.visible));
+      measurements.push({ ...measure, original, afterResize, resizeOverflow, png: { path: file, ...dimensions }, geometryVerified: true });
+    }
+  } finally {
+    await captureStyle.evaluate(element => element.remove());
+    await page.setViewportSize({ width: 390, height: 1000 });
   }
   if (!live) {
     mode = 'loading';

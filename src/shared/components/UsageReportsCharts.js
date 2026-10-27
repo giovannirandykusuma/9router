@@ -15,7 +15,7 @@ export default function UsageReportsCharts({ daily, byModel, timezone }) {
         <select aria-label="Chart metric" value={metric} onChange={(e) => setMetric(e.target.value)} className="rounded-lg border border-border bg-bg px-2 py-1 text-xs">{Object.entries(series).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select>
       </div>
       <p className="mb-2 text-xs text-text-muted">{timezone} · {series[metric]} · known values only</p>
-      <div className="h-64 min-w-0" role="img" aria-label={`Daily ${series[metric]} chart in ${timezone}`}>
+      <div className="h-64 min-w-0 overflow-hidden" role="img" aria-label={`Daily ${series[metric]} chart in ${timezone}`}>
         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
           <LineChart data={daily} margin={{ top: 8, right: 12, bottom: 0, left: 0 }}>
             <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
@@ -30,7 +30,7 @@ export default function UsageReportsCharts({ daily, byModel, timezone }) {
     <Card className="min-w-0" padding="sm">
       <h3 className="mb-2 font-semibold">Top models</h3>
       <p className="mb-4 text-xs text-text-muted">Top 10 by recorded requests · all models included in XLSX</p>
-      <div className="h-64 min-w-0" role="img" aria-label="Requests by model chart">
+      <div className="h-64 min-w-0 overflow-hidden" role="img" aria-label="Requests by model chart">
         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
           <BarChart data={models} layout="vertical" margin={{ top: 0, right: 12, bottom: 0, left: 0 }}>
             <XAxis type="number" tick={{ fontSize: 10 }} />
