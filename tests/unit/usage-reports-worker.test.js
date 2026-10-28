@@ -32,7 +32,7 @@ describe('worker encoded output budget', () => {
   it('rejects oversized JSON and XLSX explicitly without truncation', async () => {
     expect(MAX_OUTPUT_BYTES).toBe(64 * 1024 * 1024);
     const summary = { ...Object.fromEntries(METRICS.map((m) => [m, 0])), known: Object.fromEntries(METRICS.map((m) => [m, 0])) };
-    const report = { filters, cutoff: 0, summary, daily: [], byModel: [], byAccount: [], requests: [] };
+    const report = { filters, cutoff: 0, summary, daily: [], byModel: [], byAccount: [], byKey: [], requests: [] };
     for (const fullExport of [false, true]) {
       const bytes = await encodeReport(report, fullExport);
       expect(bytes.length).toBeGreaterThan(100);

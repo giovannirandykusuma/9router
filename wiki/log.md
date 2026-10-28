@@ -1,5 +1,11 @@
 # Work log
 
+## Reporting correction — key totals and always-available aggregate Excel
+Randy requested per-key aggregation (Default etc.) and reliable Excel, then approved complete aggregate workbook separate from bounded details. Added byKey stable-ID grouping/table/sheet, explicit Unattributed group, summary mode without request pages or50k cap, detailed mode keeps cap/backcompat.601fork tests/3skips,production build,live+mock browser (both Excel types,high-volume enabled/disabled) pass. Fresh code ACCEPT `/tmp/reports-key-export-verdict.json` independently tested60k real-worker aggregate/15kdetails,metric coverage/formula/secret/MCP/empty/validation; visual ACCEPT `/tmp/reports-key-export-ui-verdict.json` inspected full1440/390 captures and workbooks. Only low findings. Not deployed yet.
+
+## Agent routing preference
+Randy explicitly requested all FUTURE workers and judges use `cx/gpt-6.1-sol` with high reasoning via9router/cx, not Claude Opus. Preserve for subsequent launches; existing review completed unchanged.
+
 ## [2026-10-27] spec/usage-reports | rung epic · coupled vertical outcome · browser timezone selectable explicitly confirmed; approved reporting scope captured before implementation. Product base170f7c79, no code edits yet. Fresh MAIN handoff for context capacity.
 
 ## [2026-10-27] successor/usage-reports Step0

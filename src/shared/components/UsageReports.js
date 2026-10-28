@@ -98,7 +98,7 @@ export default function UsageReports() {
     event.preventDefault();
     requestReport({ filters: { ...draft }, page: 1 });
   }
-  async function download() {
+  async function download(exportMode = "summary") {
     if (!result || loading || exporting) return;
     const id = generation.current;
     const controller = new AbortController();
@@ -106,7 +106,7 @@ export default function UsageReports() {
     setExporting(true);
     setExportError("");
     try {
-      const response = await fetch(`/api/usage/reports/export?${paramsFor(query.filters, { cutoff: result.cutoff })}`, { cache: "no-store", signal: controller.signal });
+      const response = await fetch(`/api/usage/reports/export?${paramsFor(query.filters, { cutoff: result.cutoff, exportMode })}`, { cache: "no-store", signal: controller.signal });
       if (!response.ok) {
         const data = await response.json();
         throw new Error(response.status === 401 ? "Sign in as a dashboard administrator to export reports." : data.error || "Unable to export report.");
@@ -153,7 +153,7 @@ export default function UsageReports() {
         <div className="flex flex-wrap items-center gap-3">
           <button type="submit" className={`${buttonClass} bg-primary text-white`}>Apply filters</button>
           <button type="button" className={buttonClass} disabled={loading} onClick={() => requestReport({ filters: { ...query.filters }, page: 1 })}>Refresh snapshot</button>
-          <span className="text-xs text-text-muted">Up to 366 days · 50,000 rows per export{dirty ? " · Unapplied changes" : ""}</span>
+          <span className="text-xs text-text-muted">Up to 366 days · Aggregated Excel available for every report · Request details limited to 50,000 rows{dirty ? " · Unapplied changes" : ""}</span>
         </div>
       </form>
     </Card>}
@@ -162,9 +162,12 @@ export default function UsageReports() {
     {result && !loading && <>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="min-w-0 break-words text-xs text-text-muted" data-testid="report-scope">{result.filters.startDate} – {result.filters.endDate} · {result.filters.timezone} · Snapshot #{result.cutoff}{dirty ? " · Showing applied filters" : ""}</p>
-        <button type="button" onClick={download} disabled={exporting || overExportLimit} className={buttonClass}>{exporting ? "Exporting…" : "Download XLSX"}</button>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" onClick={() => download("summary")} disabled={exporting} className={buttonClass}>{exporting ? "Exporting…" : "Download aggregated Excel"}</button>
+          <button type="button" onClick={() => download("details")} disabled={exporting || overExportLimit} className={buttonClass}>Download with request details</button>
+        </div>
       </div>
-      {overExportLimit && <p className="text-sm text-text-muted">This report exceeds the 50,000-request export limit. Narrow the date range or filters to download.</p>}
+      {overExportLimit && <p className="text-sm text-text-muted">Aggregated Excel includes the complete report. This report exceeds the 50,000-row request-detail limit; narrow the filters only if you need individual request rows.</p>}
       {exportError && <p role="alert" className="text-sm text-red-500">{exportError}</p>}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4" data-testid="report-summary">{METRICS.map(([metric, label]) => <Card key={metric} padding="sm">
         <p className="text-xs text-text-muted">{label}</p>
@@ -174,6 +177,7 @@ export default function UsageReports() {
       <p className="text-xs text-text-muted">Unknown means not recorded, not zero. Partial totals include only known values. Cached and reasoning tokens are subsets and are not added to total tokens again.</p>
       {result.summary.requests === 0 ? <Card><p className="py-6 text-center text-sm text-text-muted" role="status">No recorded requests match these filters.</p></Card> : <>
         <ReportCharts daily={result.daily} byModel={result.byModel} timezone={result.filters.timezone} />
+        <ReportTable title="By API key" testId="report-keys" rows={result.byKey.map((row) => ({ ...row, keyName: row.keyId ? row.keyName || row.keyId : "Unattributed" }))} columns={[["keyName", "API key"], ["requests", "Requests", formatMetric("requests")], ["inputTokens", "Input", formatMetric("inputTokens")], ["outputTokens", "Output", formatMetric("outputTokens")], ["cachedTokens", "Cached", formatMetric("cachedTokens")], ["cost", "Estimated USD", formatMetric("cost")]]} />
         <ReportTable title="By account" testId="report-accounts" rows={result.byAccount} columns={[["accountName", "Account"], ["provider", "Provider"], ["requests", "Requests", formatMetric("requests")], ["inputTokens", "Input", formatMetric("inputTokens")], ["outputTokens", "Output", formatMetric("outputTokens")], ["cost", "Estimated USD", formatMetric("cost")]]} />
         <ReportTable title="Requests" testId="report-requests" rows={result.requests} columns={[
           ["timestamp", `Time (${result.filters.timezone})`, (value) => DateTime.fromISO(value).setZone(result.filters.timezone).toFormat("yyyy-MM-dd HH:mm:ss ZZZZ")],

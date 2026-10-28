@@ -20,7 +20,7 @@ function fixture(url) {
   const p = url.searchParams;
   const total = p.get('keyId') === 'kenny' ? 31 : 62;
   const page = Number(p.get('page') || 1);
-  return { filters: Object.fromEntries(p), cutoff: 62, limits: { maxDays: 366, maxExportRows: 50000 }, summary: aggregate(total), daily: [{ date: p.get('startDate'), ...aggregate(total) }], byModel: [{ provider: 'codex', model: 'gpt-test', ...aggregate(total) }], byAccount: [{ provider: 'codex', connectionId: 'account-test', accountName: 'Synthetic account', ...aggregate(total) }], requests: Array.from({ length: Math.max(0, Math.min(25, total - (page - 1) * 25)) }, (_, i) => ({ id: (page - 1) * 25 + i, timestamp: '2026-10-15T12:00:00.000Z', provider: 'codex', model: 'gpt-test', keyId: 'kenny', keyName: 'Kenny (synthetic)', connectionId: 'account-test', accountName: 'Synthetic account', ...aggregate(1) })), pagination: { page, pageSize: 25, total, totalPages: Math.ceil(total / 25) }, options: { keys: [{ id: 'kenny', name: 'Kenny (synthetic)' }, { id: 'other', name: 'Other (synthetic)' }], providers: ['codex'], accounts: [{ id: 'account-test', name: 'Synthetic account' }], models: [{ provider: 'codex', model: 'gpt-test' }] } };
+  return { filters: Object.fromEntries(p), cutoff: 62, limits: { maxDays: 366, maxExportRows: 50000 }, summary: aggregate(total), byKey: [{ keyId: 'kenny', keyName: 'Kenny (synthetic)', ...aggregate(total) }], daily: [{ date: p.get('startDate'), ...aggregate(total) }], byModel: [{ provider: 'codex', model: 'gpt-test', ...aggregate(total) }], byAccount: [{ provider: 'codex', connectionId: 'account-test', accountName: 'Synthetic account', ...aggregate(total) }], requests: Array.from({ length: Math.max(0, Math.min(25, total - (page - 1) * 25)) }, (_, i) => ({ id: (page - 1) * 25 + i, timestamp: '2026-10-15T12:00:00.000Z', provider: 'codex', model: 'gpt-test', keyId: 'kenny', keyName: 'Kenny (synthetic)', connectionId: 'account-test', accountName: 'Synthetic account', ...aggregate(1) })), pagination: { page, pageSize: 25, total, totalPages: Math.ceil(total / 25) }, options: { keys: [{ id: 'kenny', name: 'Kenny (synthetic)' }, { id: 'other', name: 'Other (synthetic)' }], providers: ['codex'], accounts: [{ id: 'account-test', name: 'Synthetic account' }], models: [{ provider: 'codex', model: 'gpt-test' }] } };
 }
 (async () => {
   await fs.mkdir(out, { recursive: true });
@@ -73,15 +73,24 @@ function fixture(url) {
   await page.getByTestId('metric-requests').waitFor();
   assert.equal(next.cutoff, json.cutoff);
   assert.equal(await page.getByTestId('report-requests').locator('tbody tr').count(), 6);
+  assert.equal(await page.getByTestId('report-keys').locator('tbody tr').count(), 1);
   if (live) {
+    const aggregateDownload = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'Download aggregated Excel', exact: true }).click();
+    const aggregateFile = path.join(out, 'synthetic-aggregate-report.xlsx');
+    await (await aggregateDownload).saveAs(aggregateFile);
+    const aggregateWorkbook = new ExcelJS.Workbook();
+    await aggregateWorkbook.xlsx.readFile(aggregateFile);
+    assert.deepEqual(aggregateWorkbook.worksheets.map(s => s.name), ['Summary & Filters', 'Daily Usage', 'By API Key', 'By Model', 'By Account']);
+    assert.equal(aggregateWorkbook.getWorksheet('By API Key').getRow(2).getCell(3).value, 31);
     const downloadEvent = page.waitForEvent('download');
-    await page.getByRole('button', { name: 'Download XLSX' }).click();
+    await page.getByRole('button', { name: 'Download with request details' }).click();
     const download = await downloadEvent;
     const file = path.join(out, 'synthetic-usage-report.xlsx');
     await download.saveAs(file);
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.readFile(file);
-    assert.deepEqual(workbook.worksheets.map(s => s.name), ['Summary & Filters', 'Daily Usage', 'By Model', 'By Account', 'Requests']);
+    assert.deepEqual(workbook.worksheets.map(s => s.name), ['Summary & Filters', 'Daily Usage', 'By API Key', 'By Model', 'By Account', 'Requests']);
     assert.equal(workbook.getWorksheet('Requests').rowCount - 1, 31);
     const values = workbook.getWorksheet('Summary & Filters').getSheetValues();
     assert.ok(JSON.stringify(values).includes('Asia/Jakarta'));
@@ -225,6 +234,16 @@ function fixture(url) {
     await page.setViewportSize({ width: 390, height: 1000 });
   }
   if (!live) {
+    // High-volume reports must never disable aggregated downloads.
+    await page.route('**/api/usage/reports?*', async route => {
+      const data = fixture(new URL(route.request().url()));
+      data.summary = aggregate(50001);
+      await route.fulfill({ json: data });
+    }, { times: 1 });
+    await page.getByRole('button', { name: 'Refresh snapshot' }).click();
+    await page.getByTestId('metric-requests').waitFor();
+    assert.equal(await page.getByRole('button', { name: 'Download aggregated Excel', exact: true }).isEnabled(), true);
+    assert.equal(await page.getByRole('button', { name: 'Download with request details', exact: true }).isDisabled(), true);
     mode = 'loading';
     await page.getByRole('button', { name: 'Refresh snapshot' }).click();
     await page.getByText('Loading report…', { exact: true }).waitFor();

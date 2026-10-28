@@ -37,6 +37,36 @@ function insert(overrides = {}) {
 }
 
 describe('usage report filters, evidence and reconciliation', () => {
+  it('validates explicit Excel modes and rejects them on JSON reports', () => {
+    const p = new URLSearchParams({ startDate: '2026-03-08', endDate: '2026-03-08', timezone: 'UTC', cutoff: '1', exportMode: 'summary' });
+    expect(normalizeFilters(p, { requireCutoff: true }).exportMode).toBe('summary');
+    expect(() => normalizeFilters(p)).toThrow(/export mode/);
+    p.set('exportMode', 'everything');
+    expect(() => normalizeFilters(p, { requireCutoff: true })).toThrow(/export mode/);
+  });
+  it('aggregates stable key identities across names and retains unattributed history', () => {
+    insert({ apiKeyId: 'default', apiKeyName: 'Default' });
+    insert({ apiKeyId: 'default', apiKeyName: 'Renamed default' });
+    insert({ apiKeyId: 'other', apiKeyName: 'Default' });
+    insert({ apiKeyId: null, apiKeyName: null });
+    const report = queryReport(db, filters());
+    expect(report.byKey).toHaveLength(3);
+    expect(report.byKey.find(r => r.keyId === 'default').requests).toBe(2);
+    expect(report.byKey.find(r => r.keyId === null).requests).toBe(1);
+    expect(report.byKey.reduce((n, r) => n + r.inputTokens, 0)).toBe(report.summary.inputTokens);
+    expect(queryReport(db, filters({ keyId: 'default' })).byKey).toHaveLength(1);
+  });
+  it('exports complete aggregates above the detail cap without reading request pages', () => {
+    db.exec(`WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<50001)
+      INSERT INTO usageHistory(timestamp,provider,apiKeyId,apiKeyName,tokens,cost)
+      SELECT '2026-03-08T12:00:00.000Z','cx','default','Default','{"prompt_tokens":1,"completion_tokens":2}',0 FROM n`);
+    const f = normalizeFilters(new URLSearchParams({ startDate: '2026-03-08', endDate: '2026-03-08', timezone: 'UTC', cutoff: '50001', exportMode: 'summary' }), { requireCutoff: true });
+    const report = queryReport(db, f, { fullExport: true });
+    expect(report.summary.requests).toBe(50001);
+    expect(report.byKey[0].requests).toBe(50001);
+    expect(report.requests).toEqual([]);
+    expect(() => queryReport(db, { ...f, exportMode: 'details' }, { fullExport: true })).toThrow(/50000/);
+  });
   it('excludes MCP from an unfiltered report, including summary, options and requests', () => {
     insert();
     insert({ provider: 'mcp-gateway', model: 'private-tool' });

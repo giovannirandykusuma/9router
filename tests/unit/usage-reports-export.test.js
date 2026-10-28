@@ -10,18 +10,19 @@ function fixture() {
   return { filters: { startDate: '2026-03-08', endDate: '2026-03-08', timezone: 'America/New_York', startUtc: '2026-03-08T05:00:00.000Z', endUtc: '2026-03-09T04:00:00.000Z' }, cutoff: 42,
     summary: { ...metrics, known }, daily: [{ date: '2026-03-08', ...metrics, known }],
     byModel: [{ provider: '@SUM(1)', model: '=HYPERLINK("https://evil")', ...metrics, known }],
+    byKey: [{ keyId: 'key', keyName: '=Default', ...metrics, known }],
     byAccount: [{ provider: '-1+1', connectionId: 'account', accountName: '+cmd|A1', ...metrics, known }],
     requests: [{ id: 42, timestamp: '2026-03-08T12:00:00.000Z', provider: '@SUM(1)', model: '=HYPERLINK("https://evil")', connectionId: 'account', accountName: '\t=1+1', keyId: 'key', keyName: '\n+cmd|A1', ...metrics,
       apiKey: 'SHOULD_NOT_EXPORT_RAW_KEY', tokens: { secret: 'SHOULD_NOT_EXPORT_TOKENS' }, meta: { prompt: 'SHOULD_NOT_EXPORT_PROMPT' }, endpoint: 'SHOULD_NOT_EXPORT_ENDPOINT' }],
   };
 }
 describe('usage report XLSX', () => {
-  it('round-trips five sheets, numeric totals, coverage, timezone and unknown blank cells', async () => {
+  it('round-trips six sheets, numeric totals, coverage, timezone and unknown blank cells', async () => {
     const report = fixture();
     const buffer = await createReportWorkbook(report);
     expect(buffer.subarray(0, 2).toString()).toBe('PK');
     const workbook = await new ExcelJS.Workbook().xlsx.load(buffer);
-    expect(workbook.worksheets.map((s) => s.name)).toEqual(['Summary & Filters', 'Daily Usage', 'By Model', 'By Account', 'Requests']);
+    expect(workbook.worksheets.map((s) => s.name)).toEqual(['Summary & Filters', 'Daily Usage', 'By API Key', 'By Model', 'By Account', 'Requests']);
     const summary = new Map(workbook.getWorksheet('Summary & Filters').getSheetValues().filter(Boolean).map((row) => [row[1], row[2]]));
     expect(summary.get('timezone')).toBe('America/New_York');
     expect(summary.get('cutoff')).toBe(42);
@@ -37,6 +38,15 @@ describe('usage report XLSX', () => {
     }
     const daily = workbook.getWorksheet('Daily Usage');
     expect(daily.getRow(2).getCell(8).value).toBe(report.summary.totalTokens);
+  });
+  it('downloads a five-sheet aggregate workbook without misleading request rows', async () => {
+    const report = fixture();
+    report.filters.exportMode = 'summary';
+    const workbook = await new ExcelJS.Workbook().xlsx.load(await createReportWorkbook(report));
+    expect(workbook.worksheets.map(s => s.name)).toEqual(['Summary & Filters', 'Daily Usage', 'By API Key', 'By Model', 'By Account']);
+    expect(workbook.getWorksheet('By API Key').getRow(2).getCell(2).value).toBe('=Default');
+    expect(workbook.getWorksheet('By API Key').getRow(2).getCell(3).value).toBe(1);
+    expect(JSON.stringify(workbook.model)).toContain('individual request rows intentionally not included');
   });
   it('writes formula-looking names as literal strings and excludes all unapproved fields', async () => {
     const workbook = await new ExcelJS.Workbook().xlsx.load(await createReportWorkbook(fixture()));

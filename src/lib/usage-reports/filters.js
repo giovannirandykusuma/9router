@@ -4,7 +4,7 @@ export const LIMITS = { maxDays: 366, maxExportRows: 50000 };
 export class ReportError extends Error {
   constructor(message, status = 400) { super(message); this.status = status; }
 }
-const ALLOWED = new Set(['startDate', 'endDate', 'timezone', 'keyId', 'provider', 'connectionId', 'model', 'page', 'pageSize', 'cutoff']);
+const ALLOWED = new Set(['startDate', 'endDate', 'timezone', 'keyId', 'provider', 'connectionId', 'model', 'page', 'pageSize', 'cutoff', 'exportMode']);
 function integer(value, fallback, min, max) {
   if (value === null) return fallback;
   if (!/^(0|[1-9]\d*)$/.test(value)) throw new ReportError('Invalid integer parameter');
@@ -39,6 +39,11 @@ export function normalizeFilters(params, { requireCutoff = false } = {}) {
       if (!value || value.length > 256 || value.trim() !== value || /[\u0000-\u001f\u007f]/.test(value)) throw new ReportError('Invalid filter identifier');
       filters[key] = value;
     }
+  }
+  const exportMode = params.get('exportMode');
+  if (exportMode !== null) {
+    if (!requireCutoff || !['summary', 'details'].includes(exportMode)) throw new ReportError('Invalid export mode');
+    filters.exportMode = exportMode;
   }
   filters.page = integer(params.get('page'), 1, 1, 100000000);
   filters.pageSize = integer(params.get('pageSize'), 25, 1, 100);

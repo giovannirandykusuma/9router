@@ -92,7 +92,7 @@ export function queryReport(db, filters, { fullExport = false } = {}) {
     let aggregates = cache.get(aggregateKey);
     const where = reportWhere(filters, cutoff);
     const count = aggregates?.summary.requests ?? db.get(`SELECT COUNT(*) AS total FROM usageHistory h WHERE ${where.sql}`, where.params).total;
-    if (fullExport && count > LIMITS.maxExportRows) throw new ReportError('Export exceeds 50000 requests; narrow the filters', 413);
+    if (fullExport && filters.exportMode !== 'summary' && count > LIMITS.maxExportRows) throw new ReportError('Export exceeds 50000 requests; narrow the filters', 413);
     if (!aggregates) {
       const cte = metricCte(where.sql);
       const days = dayBoundaries(filters);
@@ -100,10 +100,11 @@ export function queryReport(db, filters, { fullExport = false } = {}) {
       const bucket = dayExpression(days, dayParams);
       // Materialize token evidence once and reuse it for all four aggregates.
       const groups = db.all(`${cte}
-        SELECT 'summary' AS kind, NULL AS date, NULL AS provider, NULL AS model, NULL AS connectionId, NULL AS accountName, ${aggregateSql} FROM metrics
-        UNION ALL SELECT 'model', NULL, provider, model, NULL, NULL, ${aggregateSql} FROM metrics GROUP BY provider, model
-        UNION ALL SELECT 'account', NULL, provider, NULL, connectionId, accountName, ${aggregateSql} FROM metrics GROUP BY provider, connectionId, accountName
-        UNION ALL SELECT 'day', ${bucket} AS date, NULL, NULL, NULL, NULL, ${aggregateSql} FROM metrics GROUP BY date`, [...where.params, ...dayParams]);
+        SELECT 'summary' AS kind, NULL AS date, NULL AS provider, NULL AS model, NULL AS connectionId, NULL AS accountName, NULL AS keyId, NULL AS keyName, ${aggregateSql} FROM metrics
+        UNION ALL SELECT 'model', NULL, provider, model, NULL, NULL, NULL, NULL, ${aggregateSql} FROM metrics GROUP BY provider, model
+        UNION ALL SELECT 'account', NULL, provider, NULL, connectionId, accountName, NULL, NULL, ${aggregateSql} FROM metrics GROUP BY provider, connectionId, accountName
+        UNION ALL SELECT 'key', NULL, NULL, NULL, NULL, NULL, keyId, MAX(keyName), ${aggregateSql} FROM metrics GROUP BY keyId
+        UNION ALL SELECT 'day', ${bucket} AS date, NULL, NULL, NULL, NULL, NULL, NULL, ${aggregateSql} FROM metrics GROUP BY date`, [...where.params, ...dayParams]);
       const unpack = (row, fields = []) => {
         const values = Object.fromEntries([...METRICS, ...METRICS.filter((m) => m !== 'requests').map((m) => `known_${m}`), ...fields].map((key) => [key, row[key]]));
         return aggregate(values);
@@ -114,7 +115,8 @@ export function queryReport(db, filters, { fullExport = false } = {}) {
       const dailyMap = new Map(groups.filter((row) => row.kind === 'day').map((row) => [row.date, unpack(row, ['date'])]));
       const empty = { ...Object.fromEntries(METRICS.map((m) => [m, m === 'requests' ? 0 : null])), known: Object.fromEntries(METRICS.map((m) => [m, 0])) };
       const daily = days.map((day) => dailyMap.get(day.date) || { date: day.date, ...empty });
-      aggregates = { summary, daily, byModel, byAccount };
+      const byKey = groups.filter((row) => row.kind === 'key').map((row) => unpack(row, ['keyId', 'keyName'])).sort((a, b) => b.requests - a.requests);
+      aggregates = { summary, daily, byModel, byAccount, byKey };
       cache.set(aggregateKey, aggregates);
     }
     const optionsKey = JSON.stringify(['options', cutoff]);
@@ -127,7 +129,7 @@ export function queryReport(db, filters, { fullExport = false } = {}) {
     const offset = fullExport ? 0 : (filters.page - 1) * filters.pageSize;
     // Bound the page before parsing JSON, not after materializing all matches.
     const pageCte = metricCte(`h.id IN (SELECT h.id FROM usageHistory h WHERE ${where.sql} ORDER BY timestamp DESC, id DESC LIMIT ? OFFSET ?)`);
-    const requests = db.all(`${pageCte} SELECT id, timestamp, provider, model, connectionId, accountName, keyId, keyName, 1 AS requests, ${metricColumns}
+    const requests = fullExport && filters.exportMode === 'summary' ? [] : db.all(`${pageCte} SELECT id, timestamp, provider, model, connectionId, accountName, keyId, keyName, 1 AS requests, ${metricColumns}
       FROM metrics ORDER BY timestamp DESC, id DESC`, [...where.params, limit, offset]);
     report = { filters: { ...filters, cutoff }, cutoff, limits: { ...LIMITS }, ...aggregates, requests,
       pagination: { page: filters.page, pageSize: filters.pageSize, total: count, totalPages: Math.ceil(count / filters.pageSize) },

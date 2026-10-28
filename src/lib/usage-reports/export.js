@@ -28,6 +28,9 @@ export async function createReportWorkbook(report) {
   addRow(summary, ['Cost basis', 'Saved historical estimate; not an invoice or subscription charge']);
   addRow(summary, ['Missing metrics', 'Blank means unknown; partial sums include recorded values only']);
   addRow(summary, ['cutoff', report.cutoff]);
+  addRow(summary, ['Export contents', report.filters.exportMode === 'summary'
+    ? 'Complete aggregates; individual request rows intentionally not included'
+    : 'Complete aggregates and individual request rows']);
   for (const key of ['startDate', 'endDate', 'timezone', 'startUtc', 'endUtc', 'keyId', 'provider', 'connectionId', 'model']) {
     if (report.filters[key] !== undefined) addRow(summary, [key, report.filters[key]]);
   }
@@ -35,6 +38,7 @@ export async function createReportWorkbook(report) {
   summary.commit();
   for (const [name, rows, fields] of [
     ['Daily Usage', report.daily, ['date']],
+    ['By API Key', report.byKey.map((row) => ({ ...row, keyName: row.keyId ? row.keyName || row.keyId : 'Unattributed' })), ['keyId', 'keyName']],
     ['By Model', report.byModel, ['provider', 'model']],
     ['By Account', report.byAccount, ['provider', 'connectionId', 'accountName']],
   ]) {
@@ -43,11 +47,13 @@ export async function createReportWorkbook(report) {
     for (const row of rows) addRow(sheet, [...fields.map((field) => row[field]), ...aggregateValues(row)]);
     sheet.commit();
   }
+  if (report.filters.exportMode !== 'summary') {
   const requests = workbook.addWorksheet('Requests');
   const fields = ['id', 'timestamp', 'provider', 'model', 'connectionId', 'accountName', 'keyId', 'keyName', ...METRICS];
   addRow(requests, fields);
   for (const row of report.requests) addRow(requests, fields.map((field) => row[field]));
   requests.commit();
+  }
   await workbook.commit();
   return completed;
 }
