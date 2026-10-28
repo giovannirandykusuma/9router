@@ -21,6 +21,7 @@ import { resolveZedModels } from "open-sse/shared/zedAuth.js";
 import { updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { capabilitiesFromServiceKind, getCapabilitiesForModel, aggregateComboCapabilities } from "open-sse/providers/capabilities.js";
+import { getThinkingLevels } from "open-sse/providers/thinkingLevels.js";
 
 // Qoder shares one live resolver across intl (qoder) and CN (qoder-cn); the
 // credentials carry the provider id so qoderModels picks the right region's
@@ -632,11 +633,40 @@ export async function buildModelsList(kindFilter, options = {}) {
     }
   }
 
+  // Published prefixes are routing labels, not provider registry identities.
+  const providerByOutputAlias = new Map();
+  for (const [providerId, connection] of activeConnectionByProvider) {
+    const alias = (connection.providerSpecificData?.prefix
+      || getProviderAlias(providerId) || PROVIDER_ID_TO_ALIAS[providerId] || providerId).trim();
+    providerByOutputAlias.set(alias, providerId);
+  }
+  const levelsFor = (id, visiting = new Set()) => {
+    if (combosByName.has(id)) {
+      if (visiting.has(id)) return [];
+      const next = new Set([...visiting, id]);
+      const seats = combosByName.get(id)?.models || [];
+      const sets = seats.map((seat) => levelsFor(seat, next));
+      return sets.length ? sets[0].filter((level) => sets.every((set) => set.includes(level))) : [];
+    }
+    const slash = id.indexOf("/");
+    if (slash <= 0) return [];
+    const alias = id.slice(0, slash);
+    return getThinkingLevels(providerByOutputAlias.get(alias) || ALIAS_TO_PROVIDER_ID[alias] || alias, id.slice(slash + 1)) || [];
+  };
   const dedupedModels = [];
   const seenModelIds = new Set();
   for (const model of models) {
     if (!model?.id || seenModelIds.has(model.id)) continue;
     seenModelIds.add(model.id);
+    if (kindFilter.includes(LLM_KIND) && !model.kind) {
+      // Publish the same per-provider registry the effort picker and wire use.
+      // Combo requests can land on any seat: advertise only their intersection,
+      // never a union that would promise an effort another seat cannot serve.
+      model.capabilities = {
+        ...model.capabilities,
+        thinkingLevels: model.capabilities?.reasoning === false ? [] : levelsFor(model.id),
+      };
+    }
     dedupedModels.push(model);
   }
 

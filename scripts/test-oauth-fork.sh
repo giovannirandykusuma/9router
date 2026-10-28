@@ -24,6 +24,7 @@ npx --no-install vitest run \
   unit/claude-thinking-stream-boundaries.test.js \
   unit/codex-profiles.test.js \
   unit/combo-caps-resolver.test.js \
+  unit/v1-models-thinking-levels.test.js \
   unit/responses-completed-output.test.js \
   unit/usage-api-key-attribution.test.js \
   unit/openai-responses-terminal-event.test.js \
