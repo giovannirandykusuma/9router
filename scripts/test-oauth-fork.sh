@@ -29,6 +29,7 @@ npx --no-install vitest run \
   unit/openai-responses-terminal-event.test.js \
   unit/api-key-limits.test.js \
   unit/gemini4-argon-caps.test.js \
+  unit/gemini-schema-property-names.test.js \
   unit/opencode-go-gemini-argon.test.js \
   unit/opencode-go-models.test.js \
   unit/key-access.test.js \
