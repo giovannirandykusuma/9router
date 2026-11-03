@@ -13,6 +13,7 @@ function isLLMProvider(id) {
 import Badge from "./Badge";
 import Card from "./Card";
 import OverviewCards from "@/app/(dashboard)/dashboard/usage/components/OverviewCards";
+import ActiveRequestsCard from "@/app/(dashboard)/dashboard/usage/components/ActiveRequestsCard";
 import UsageTable, { fmt, fmtTime } from "@/app/(dashboard)/dashboard/usage/components/UsageTable";
 import dynamic from "next/dynamic";
 // Lazy-load: keeps @xyflow/react and recharts out of the initial bundle
@@ -212,6 +213,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
   const sortOrder = searchParams.get("sortOrder") || "asc";
 
   const [stats, setStats] = useState(null);
+  const [live, setLive] = useState(false);
   const [loading, setLoading] = useState(true);
   const [fetching, setFetching] = useState(false);
   const [tableView, setTableView] = useState(() => {
@@ -291,6 +293,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
     es.onmessage = (e) => {
       try {
         const data = JSON.parse(e.data);
+        setLive(true);
         // Always merge only real-time fields, never overwrite full stats from REST
         setStats((prev) => {
           if (!prev) return prev;
@@ -308,7 +311,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
       }
     };
 
-    es.onerror = () => setLoading(false);
+    es.onerror = () => { setLive(false); setLoading(false); };
 
     return () => es.close();
   }, []);
@@ -476,6 +479,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
 
       {/* Overview cards */}
       {loading ? spinner : <OverviewCards stats={stats} />}
+      {!loading && <ActiveRequestsCard pending={stats?.pending} activeRequests={stats?.activeRequests} live={live} />}
 
       {/* Provider topology + Recent Requests */}
       {loading ? spinner : (

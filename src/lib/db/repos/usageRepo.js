@@ -1,4 +1,5 @@
 import { EventEmitter } from "events";
+import { createActiveRequestTracker } from "../../activeRequests.js";
 import { getAdapter } from "../driver.js";
 import { resolveUsageKey } from "../../usage-reports/attribution.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
@@ -12,7 +13,6 @@ function maskApiKey(key) {
   return trimmed.slice(0, 8) + "***" + trimmed.slice(-4);
 }
 
-const PENDING_TIMEOUT_MS = 60 * 1000;
 const RING_CAP = 50;
 const CONN_CACHE_TTL_MS = 30 * 1000;
 const PERIOD_MS = { "24h": 86400000, "7d": 604800000, "30d": 2592000000, "60d": 5184000000 };
@@ -24,14 +24,12 @@ if (!global._statsEmitter) {
   global._statsEmitter = new EventEmitter();
   global._statsEmitter.setMaxListeners(50);
 }
-if (!global._pendingTimers) global._pendingTimers = {};
 if (!global._recentRing) global._recentRing = { items: [], initialized: false };
 if (!global._connectionMapCache) global._connectionMapCache = { map: {}, ts: 0 };
 if (!global._statsEmitTimers) global._statsEmitTimers = { pending: null, update: null };
 
 const pendingRequests = global._pendingRequests;
 const lastErrorProvider = global._lastErrorProvider;
-const pendingTimers = global._pendingTimers;
 const recentRing = global._recentRing;
 const connCache = global._connectionMapCache;
 const statsEmitTimers = global._statsEmitTimers;
@@ -152,49 +150,14 @@ async function calculateCost(provider, model, tokens) {
   }
 }
 
-export function trackPendingRequest(model, provider, connectionId, started, error = false) {
-  const modelKey = provider ? `${model} (${provider})` : model;
-  const timerKey = `${connectionId}|${modelKey}`;
-
-  if (!pendingRequests.byModel[modelKey]) pendingRequests.byModel[modelKey] = 0;
-  pendingRequests.byModel[modelKey] = Math.max(0, pendingRequests.byModel[modelKey] + (started ? 1 : -1));
-  if (pendingRequests.byModel[modelKey] === 0) delete pendingRequests.byModel[modelKey];
-
-  if (connectionId) {
-    if (!pendingRequests.byAccount[connectionId]) pendingRequests.byAccount[connectionId] = {};
-    if (!pendingRequests.byAccount[connectionId][modelKey]) pendingRequests.byAccount[connectionId][modelKey] = 0;
-    pendingRequests.byAccount[connectionId][modelKey] = Math.max(0, pendingRequests.byAccount[connectionId][modelKey] + (started ? 1 : -1));
-    if (pendingRequests.byAccount[connectionId][modelKey] === 0) {
-      delete pendingRequests.byAccount[connectionId][modelKey];
-      if (Object.keys(pendingRequests.byAccount[connectionId]).length === 0) {
-        delete pendingRequests.byAccount[connectionId];
-      }
-    }
-  }
-
-  if (started) {
-    clearTimeout(pendingTimers[timerKey]);
-    pendingTimers[timerKey] = setTimeout(() => {
-      delete pendingTimers[timerKey];
-      if (pendingRequests.byModel[modelKey] > 0) pendingRequests.byModel[modelKey] = 0;
-      if (connectionId && pendingRequests.byAccount[connectionId]?.[modelKey] > 0) {
-        pendingRequests.byAccount[connectionId][modelKey] = 0;
-      }
-      scheduleStatsEvent("pending");
-    }, PENDING_TIMEOUT_MS);
-  } else {
-    clearTimeout(pendingTimers[timerKey]);
-    delete pendingTimers[timerKey];
-  }
-
-  if (!started && error && provider) {
-    lastErrorProvider.provider = provider.toLowerCase();
-    lastErrorProvider.ts = Date.now();
-  }
-
-  // [PENDING] console line removed; lifecycle is visible via "▶" and "📊 done" lines
-  scheduleStatsEvent("pending");
+if (!global._activeRequestTracker) {
+  global._activeRequestTracker = createActiveRequestTracker(
+    pendingRequests,
+    () => scheduleStatsEvent("pending"),
+    (provider) => { lastErrorProvider.provider = provider.toLowerCase(); lastErrorProvider.ts = Date.now(); }
+  );
 }
+export const trackPendingRequest = global._activeRequestTracker;
 
 export async function getActiveRequests() {
   const activeRequests = [];
@@ -238,7 +201,11 @@ export async function getActiveRequests() {
     .slice(0, 20);
 
   const errorProvider = (Date.now() - lastErrorProvider.ts < 10000) ? lastErrorProvider.provider : "";
-  return { activeRequests, recentRequests, errorProvider };
+  const pending = {
+    byModel: { ...pendingRequests.byModel },
+    byAccount: Object.fromEntries(Object.entries(pendingRequests.byAccount).map(([id, counts]) => [id, { ...counts }])),
+  };
+  return { activeRequests, recentRequests, errorProvider, pending };
 }
 
 export async function saveRequestUsage(entry) {
