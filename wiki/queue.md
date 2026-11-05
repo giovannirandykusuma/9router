@@ -1,5 +1,9 @@
 # Follow-up queue
 
+- Storm topology review (accepted, low priority): remove the now-unused `topology-edge-*` beam animation CSS in `src/app/globals.css` in a separate cleanup; preserve the router animation rules still in use.
+- Storm topology review (accepted, low priority): replace source-string assertions and the helper-only fake-timer longevity check in `tests/unit/provider-topology.test.js` with behavioral component/lifecycle tests. Keep coverage for authoritative requests beyond 60 seconds and reconnecting transitions.
+- Storm topology review (accepted, low priority): evaluate whether the topology's `role="status"` count updates are too chatty for screen readers during frequent SSE snapshots; consider announcing connection-state changes separately from numeric activity without reducing count accessibility.
+
 - Existing Usage overview `7d` rollup precise lastUsed overlay compares local date-only strings parsed as UTC to actual ISO timestamps. Before UTC midnight in UTC+7, the date label can compare later than the real event, leaving date-only lastUsed. Reproduced on unchanged170f7c79 product source in MAIN before backend merge: `/tmp/usage-reports-prebackend-baseline.log`, key-breakdown7d expected T but got2026-10-28. Not a reporting regression; report queries do not use usageDaily. Grouping test clock pinned to a deterministic midday instant, no product patch in this scope.
 - Tests package pins Vitest4.1.11 and has preexisting moderate @vitest/mocker advisories GHSA-qxg6-89mg-rqv8 and GHSA-xp26-3454-mjgp; consider separate4.1.12 upgrade. Runtime/root npm audit is clean after scoped ExcelJS uuid11.1.1 override. No public test dev server used.
 - Optional Reports mobile enhancement: collapse seven-field filter form after applying to reduce scroll. Current form is accessible and matches existing dashboard; not a requirement.

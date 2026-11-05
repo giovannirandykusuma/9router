@@ -11,6 +11,25 @@ hides the stale total and displays Reconnecting. A process restart resets the
 in-memory state. Multi-process deployments would need aggregation; this deployment
 runs one 9Router instance.
 
+## Provider topology
+
+The existing provider graph uses Storm lightning for live chat attempts. Counts
+sum each active row's `count` across models and accounts, with case-normalized
+provider IDs. The center shows total requests, not distinct providers. Counts
+must be finite, nonnegative safe integers; invalid rows never imply activity.
+Requests remain represented beyond 60 seconds until the authoritative stream
+removes them. Recent completed requests only retain the idle last/error styling.
+
+Each provider draws one strand per request, capped at eight strands. Above eight,
+the badge shows the actual count and “8 strands” to make bundling explicit. A
+shared animation scheduler updates only SVG geometry, with a fixed budget of
+three sparks and two short branches per active provider. The existing node
+positions, provider icons, handle geometry and ReactFlow controls are unchanged.
+Hidden tabs and reduced motion (including preference changes) stop animation;
+static anchored strands and numeric counts remain. While SSE reconnects, stale
+counts and activity disappear and the graph displays “Count unavailable”. No
+backend concurrency or authentication behavior changes.
+
 ## Lifetime ownership
 
 `trackPendingRequest(..., true)` returns an idempotent completion handle for that

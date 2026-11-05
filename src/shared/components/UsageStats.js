@@ -487,6 +487,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
           <ProviderTopology
             providers={providers}
             activeRequests={stats.activeRequests || []}
+            live={live}
             lastProvider={stats.recentRequests?.[0]?.provider || ""}
             errorProvider={stats.errorProvider || ""}
           />
