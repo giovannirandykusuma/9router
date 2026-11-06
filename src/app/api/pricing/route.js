@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getPricing, updatePricing, resetPricing, resetAllPricing } from "@/lib/localDb.js";
-import { getDefaultPricing } from "open-sse/providers/pricing.js";
+import { getPricing, getPricingForModel, updatePricing, resetPricing, resetAllPricing } from "@/lib/localDb.js";
+import { getDefaultPricing, serializeEditablePricing } from "open-sse/providers/pricing.js";
 
 /**
  * GET /api/pricing
@@ -9,7 +9,7 @@ import { getDefaultPricing } from "open-sse/providers/pricing.js";
 export async function GET() {
   try {
     const pricing = await getPricing();
-    return NextResponse.json(pricing);
+    return NextResponse.json(serializeEditablePricing(pricing));
   } catch (error) {
     console.error("Error fetching pricing:", error);
     return NextResponse.json(
@@ -72,8 +72,22 @@ export async function PATCH(request) {
       }
     }
 
+    // The editor submits its entire loaded snapshot, including unchanged
+    // built-in base rates. Do not turn those into flat overrides of tiers.
+    // The effective lookup returns a custom object first, so an existing flat
+    // override is preserved even when its numbers happen to equal the base.
+    for (const [provider, models] of Object.entries(body)) {
+      for (const [model, rates] of Object.entries(models)) {
+        const effective = await getPricingForModel(provider, model);
+        if (!effective?.contextTiers) continue;
+        const base = serializeEditablePricing({ [provider]: { [model]: effective } })[provider][model];
+        if (Object.entries(rates).every(([field, value]) => base[field] === value)) {
+          delete models[model];
+        }
+      }
+    }
     const updatedPricing = await updatePricing(body);
-    return NextResponse.json(updatedPricing);
+    return NextResponse.json(serializeEditablePricing(updatedPricing));
   } catch (error) {
     console.error("Error updating pricing:", error);
     return NextResponse.json(
@@ -106,7 +120,7 @@ export async function DELETE(request) {
     }
 
     const pricing = await getPricing();
-    return NextResponse.json(pricing);
+    return NextResponse.json(serializeEditablePricing(pricing));
   } catch (error) {
     console.error("Error resetting pricing:", error);
     return NextResponse.json(

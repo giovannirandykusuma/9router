@@ -1,3 +1,5 @@
+import { canonicalizeUsage } from "../utils/usageTracking.js";
+
 // Pricing rates for AI models — all rates in $/1M tokens
 //
 // Fallback order (first match wins):
@@ -200,6 +202,14 @@ export const MODEL_PRICING = {
  * Keyed by provider alias (cc, cx, gc, gh, ...) or provider id (openai, anthropic, ...).
  */
 export const PROVIDER_PRICING = {
+  claude: {
+    // Base estimate through 100K input; longer prompts use the whole-request
+    // tier below. Cache creation remains a 5m estimate (TTL is not tracked).
+    "claude-haiku-5-5": {
+      input: 0.10, output: 0.50, cached: 0.01, reasoning: 0.50, cache_creation: 0.125,
+      contextTiers: [{ above: 100000, input: 0.50, output: 2.50, cached: 0.05, reasoning: 2.50, cache_creation: 0.625 }],
+    },
+  },
   // GitHub Copilot (gh) — explicit override, matches canonical gpt-5.3-codex rate
   gh: {
     "gpt-5.3-codex": { input: 1.75, output: 14.00, cached: 0.175, reasoning: 14.00, cache_creation: 1.75 },
@@ -449,12 +459,20 @@ export function getPricingForModel(provider, model) {
   return null;
 }
 
-/**
- * Get all provider pricing (for UI / API).
- * Returns PROVIDER_PRICING — consumers should fall back to MODEL_PRICING for unlisted models.
- */
+/** Editable pricing only contains scalar rates; tier metadata is internal. */
+export function serializeEditablePricing(pricing) {
+  const fields = ["input", "output", "cached", "reasoning", "cache_creation"];
+  return Object.fromEntries(Object.entries(pricing).map(([provider, models]) => [
+    provider,
+    Object.fromEntries(Object.entries(models).map(([model, rates]) => [
+      model, Object.fromEntries(fields.filter((field) => rates[field] !== undefined).map((field) => [field, rates[field]])),
+    ])),
+  ]));
+}
+
+/** Get scalar provider defaults for the editor and its offline fallback. */
 export function getDefaultPricing() {
-  return PROVIDER_PRICING;
+  return serializeEditablePricing(PROVIDER_PRICING);
 }
 
 /**
@@ -475,6 +493,17 @@ export function formatCost(cost) {
  */
 export function calculateCostFromTokens(tokens, pricing) {
   if (!tokens || !pricing) return 0;
+
+  // Tier thresholds count ALL input, including cache reads and writes. Fold
+  // raw Claude usage once; canonical usage is idempotent. Flat/custom pricing
+  // keeps its existing behavior and is never assigned an implicit tier.
+  if (Array.isArray(pricing.contextTiers)) {
+    tokens = canonicalizeUsage(tokens);
+    if (!tokens) return 0;
+    for (const tier of pricing.contextTiers) {
+      if (tokens.prompt_tokens > tier.above) pricing = { ...pricing, ...tier };
+    }
+  }
 
   let cost = 0;
 

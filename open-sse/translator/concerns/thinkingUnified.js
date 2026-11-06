@@ -301,7 +301,7 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels, display, model = "")
       else delete body.thinking;
       // xhigh is model-gated (Opus/Sonnet 4.6 reject it) — clamp when not advertised.
       // Claude effort has no "minimal" (always-on models clamp "none" to it).
-      body.output_config = { effort: level === "auto" ? "high"
+      body.output_config = { effort: level === "auto" ? (caps.thinkingDefaultEffort || "high")
         : level === "minimal" ? "low"
         : level === "xhigh" && !supportedLevels?.includes("xhigh") ? "high" : level };
       break;
@@ -456,7 +456,13 @@ export function applyThinking(targetFormat, model, body, provider = null, intent
   // comes back at all; keep what the client asked for instead of resetting it.
   // An OpenAI-shaped client's ask arrives via the captured intent instead.
   const display = typeof body.thinking?.display === "string" ? body.thinking.display : intent?.display;
+  // Some adaptive models accept disabled thinking only at a subset of effort
+  // levels. Keep an explicit off preference there; higher effort must adapt.
+  const disabled = body.thinking?.type === "disabled";
   stripAll(body);
   applyFormat(fmt, body, cfg, caps, supportedLevels, display, cleanModel);
+  if (disabled && caps.thinkingOffEffortLevels?.includes(body.output_config?.effort)) {
+    body.thinking = { type: "disabled" };
+  }
   return body;
 }

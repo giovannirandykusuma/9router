@@ -18,7 +18,7 @@ const claudeWireBody = () => ({
 });
 
 describe("opencode-go claude-haiku-5-5 thinking shape", () => {
-  it("capability override selects adaptive for this provider only", () => {
+  it("capability override selects adaptive without changing the global fallback", () => {
     expect(getCapabilitiesForModel("opencode-go", "claude-haiku-5-5").thinkingFormat).toBe("claude-adaptive");
     expect(getCapabilitiesForModel(undefined, "claude-haiku-5-5").thinkingFormat).toBe("claude-budget");
   });
@@ -31,9 +31,9 @@ describe("opencode-go claude-haiku-5-5 thinking shape", () => {
     expect(body.output_config?.effort).toBeTruthy();
   });
 
-  it("other providers keep the budget shape for the same model id", () => {
-    // Regression guard: the override must not leak past opencode-go.
-    const body = applyThinking("claude", "claude-haiku-5-5", claudeWireBody(), "claude");
+  it("unconfigured providers keep the budget shape for the same model id", () => {
+    // Claude has its own verified override; the generic fallback is unchanged.
+    const body = applyThinking("claude", "claude-haiku-5-5", claudeWireBody(), "anthropic");
 
     expect(body.thinking?.type).toBe("enabled");
     expect(body.thinking?.budget_tokens).toBeGreaterThan(0);

@@ -265,10 +265,10 @@ describe("getCapabilitiesForModel — codebuddy-cn provider overrides", () => {
     expect(haiku55.contextWindow).toBe(1000000);
     expect(haiku55.maxOutput).toBe(128000);
 
-    // The override is provider-scoped: the global haiku pattern (claude-budget) still
-    // governs every other provider, including the bare/anthropic lookup.
+    // The global haiku pattern remains budget-based. Claude has its own exact
+    // adaptive override; unconfigured/bare lookups are unchanged.
     expect(getCapabilitiesForModel(undefined, "claude-haiku-5-5").thinkingFormat).toBe("claude-budget");
-    expect(getCapabilitiesForModel("claude", "claude-haiku-5-5").thinkingFormat).toBe("claude-budget");
+    expect(getCapabilitiesForModel("claude", "claude-haiku-5-5")).toMatchObject({ thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000 });
     expect(getCapabilitiesForModel("opencode-go", "claude-haiku-4-5-20251001").thinkingFormat).toBe("claude-budget");
   });
 
