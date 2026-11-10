@@ -114,6 +114,11 @@ jobs:
                    /app/.next/server/app/api/mcp-gateway/keys/usage/route.js; do
             docker run --rm --entrypoint test "$IMG" -f "$f"
           done
+          # Exercise the installed Node/undici multipart + Request boundary, not a fetch stub.
+          docker run --rm --network=none --entrypoint node \
+            -e HOME=/tmp -e DATA_DIR=/tmp/web-api-smoke \
+            --mount "type=bind,src=$PWD/scripts/check-fetch-web-api.mjs,dst=/tmp/check-fetch-web-api.mjs,readonly" \
+            "$IMG" /tmp/check-fetch-web-api.mjs /app
           # No env files, databases or VCS metadata may ship in a public image.
           docker run --rm --entrypoint sh "$IMG" -c \
             'found=$(find /app -maxdepth 3 \( -name ".env" -o -name ".env.*" -o -name "*.sqlite" -o -name ".git" \) -not -path "*/node_modules/*" | head -5); test -z "$found" || { echo "unexpected files: $found"; exit 1; }'

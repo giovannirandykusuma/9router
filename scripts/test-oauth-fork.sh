@@ -5,6 +5,7 @@ cd "$(dirname "$0")/../tests"
 # The static-default assertion intentionally expects the committed Claude fingerprint,
 # while deployment injects a newer verified fingerprint. Keep all tests intact and
 # exclude only those exact cases from this image gate.
+node ../scripts/check-fetch-web-api.mjs ..
 npx --no-install vitest run \
   unit/openai-responses-optional-params.test.js \
   translator/thinking-unified.test.js \

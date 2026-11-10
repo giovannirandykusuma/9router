@@ -31,10 +31,23 @@ export function isStaleSocketError(error) {
 // dispatchers created by a different undici copy (UND_ERR_INVALID_ARG on the
 // bundled-in-Node global fetch), so originalFetch/globalThis.fetch is not an
 // option once we build our own Agents.
-let undiciFetch = null;
+let undiciModule = null;
 async function rawFetch(url, options) {
-  undiciFetch ??= (await import("undici")).fetch;
-  return undiciFetch(url, options);
+  undiciModule ??= await import("undici");
+  // undici 8 brand-checks FormData; Node's built-in copy is a different realm.
+  // Rebuild entries without buffering files or losing repeated fields/filenames.
+  if (options.body instanceof globalThis.FormData && !(options.body instanceof undiciModule.FormData)) {
+    const body = new undiciModule.FormData();
+    for (const [name, value] of options.body) {
+      if (typeof value === "string") body.append(name, value);
+      else body.append(name, value, value.name);
+    }
+    options = { ...options, body };
+  }
+  // Responses remain package-undici instances. Consumers returning them from a
+  // Next route must rewrap the body/status/headers in the global Response; do not
+  // replace global constructors or buffer streaming responses to change identity.
+  return undiciModule.fetch(url, options);
 }
 
 // ─── TLS fingerprinting via got-scraping (browser-like JA3) ───────────────
@@ -349,7 +362,7 @@ async function getDispatcher(proxyUrl, insecure = false, forceFreshSocket = fals
 }
 
 function isBodyReplaySafe(body) {
-  return !(body && typeof body.getReader === "function" && body.locked);
+  return !(body && typeof body.getReader === "function" && (body.locked || Readable.isDisturbed(body)));
 }
 
 async function fetchWithTlsFallback(url, options, proxyUrl, forceFreshSocket = false) {
@@ -449,6 +462,17 @@ async function createBypassRequest(parsedUrl, realIP, options) {
 }
 
 export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
+  // Resolve the built-in Request + init with its own constructor first. This
+  // preserves standard override/body-used/abort semantics across undici realms,
+  // before proxy routing or a retry can inspect the wrong URL/body/signal.
+  if (url instanceof globalThis.Request) {
+    const request = new globalThis.Request(url, options);
+    options = { ...options };
+    for (const key of ["method", "headers", "body", "signal", "redirect", "credentials", "cache", "integrity", "keepalive", "mode", "referrer", "referrerPolicy", "duplex"]) {
+      options[key] = request[key];
+    }
+    url = request.url;
+  }
   const targetUrl = typeof url === "string" ? url : url.toString();
 
   // Vercel relay: forward request via relay headers

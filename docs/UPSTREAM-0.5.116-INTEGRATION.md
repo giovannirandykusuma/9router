@@ -110,3 +110,34 @@ Final correction ESLint passed with one existing registry anonymous-default-expo
 Local merge is authorized for handback despite incomplete acceptance. Its exact parents must be `d0a348d71dd36a75da8ba98578c81d58d8200bfb` and `1339107e624d1ab150c6a0c2c2ee22caa7e9db2f`. Use `git show -s --format='%H %P' HEAD` for the final SHA rather than treating this report as acceptance proof. A different fresh judge must review the integrated diff, the CommandCode host-secret gate, transport mock migration, preservation evidence, and remaining limits. MAIN owns off-Mac default regression, relocated standalone/image checks, image labels/digest verification, any push, and deployment. No push or deploy occurred here.
 
 Security warning: the CommandCode credential route boundary is fixed and tested, but local validation had the disclosed unisolated database initialization and two unauthenticated external test requests. No production credential was intentionally read or attached, no secret is included in the report, and no live inference was requested. Do not omit these incidents or claim a fully green/default-budget gate in the shipping decision.
+
+## Round-one independent review correction: undici Web API realms
+
+Fresh judge `/tmp/upstream-0116-verdict.json` rejected `5b79642d` for an upstream-inherited multipart regression: package undici 8 brand-checks its own FormData and stringifies Node's global FormData to `[object FormData]`. The actual OpenAI-compatible STT path, other STT upload paths and Cloudflare uploads were affected. A global Request input also failed URL parsing. The original mocked tests and MAIN-reported off-Mac gate could not detect either issue. The complete verdict and five loopback reproductions were read before correction; no upstream/fork preservation defect was found by that judge.
+
+The boundary correction in `open-sse/utils/proxyFetch.js` rebuilds global FormData into package FormData by iterating entries, retaining duplicate names, File/Blob values, filenames and MIME types without buffering file contents. It does not replace any global constructor. A built-in Request input is first resolved with its own constructor and the supplied init so standard URL, method, headers, body, body-used, signal and init override semantics are preserved before proxy selection. That resolved request is passed as URL plus init to package fetch. Retry safety now rejects disturbed as well as locked Web streams, so a consumed Request stream cannot be replayed after a response-phase reset. Existing string/JSON fresh-socket retry behavior, TLS defaults, strict-proxy policy, authentication, and dispatcher ownership are retained.
+
+Responses intentionally remain package-undici Response instances. Their body/status/headers work with a global `new Response(...)` wrapper, verified without buffering. The patch-site comment documents that a Next route must rewrap rather than directly return that foreign instance; the judge found no current direct-return caller. This low-severity identity caveat is documented, not hidden by constructor replacement.
+
+New `scripts/check-fetch-web-api.mjs` is a real-fetch Node test control, not a stub. It starts only loopback servers, sets all outbound proxy variables to the closed loopback port, permits loopback NO_PROXY, and uses a loopback-only forwarding/CONNECT proxy that rejects other destinations. It exercises repeated multipart fields, multiple filenames/content types, actual `handleSttCore` OpenAI-compatible upload with a synthetic key, string/URLSearchParams/Blob bodies, Request method/header/body/signal overrides, streaming duplex, already-used requests, locked streams, abort, consumed-body reset with exactly one POST, successful proxy upload, strict proxy refusal, constructor identity preservation and stream rewrapping. Servers/sockets are closed in finally blocks. The script is now required before the existing OAuth gate and is mounted into the final runtime image smoke with `docker run --network=none`, so CI tests the actual packaged Node/undici rather than relying on mocks.
+
+Focused commands and actual outcomes:
+
+```sh
+# Each host invocation used a new private HOME and DATA_DIR.
+node scripts/check-fetch-web-api.mjs
+# Red before fix: 5 failures, 4 passes (multipart, real STT, Request and abort failure).
+# Initial green: 9 passed; final expanded control: 13 passed, no skips, 3.56 seconds.
+# Logs: /tmp/upstream-116-webapi-{red,green,complete}.log
+
+cd tests
+../node_modules/.bin/vitest run unit/proxy-keepalive-dead-socket.test.js unit/econnreset-repro.test.js unit/claude-header-forwarding.test.js unit/elevenlabs-stt.test.js --testNamePattern='^(?!.*uses static provider defaults when no model is given).*$' --maxWorkers=1
+# 4 files passed, 58 passed, 1 existing stale-fingerprint exclusion, 57.71 seconds.
+# Outbound proxies pointed at closed loopback; all nonmocked requests loopback only.
+# /tmp/upstream-116-webapi-affected.log
+cd ..
+node_modules/.bin/eslint open-sse/utils/proxyFetch.js scripts/check-fetch-web-api.mjs
+# Passed, no output (/tmp/upstream-116-webapi-lint.log).
+```
+
+A first expanded proxy control timed out because its test proxy only supported CONNECT while undici uses HTTP forward proxying for HTTP targets; adding a loopback-only request forwarder fixed the test harness, with no production proxy behavior changed. No failing run is counted as green. The exact Node22 image attempt failed before container execution because the local Docker daemon returned HTTP 500 for `_ping` (`webapi-node22.log`). This is not Node22 test evidence. The workflow's new runtime smoke is mandatory before push, runs with no external networking, and must pass off-Mac before deploy. No heavy local rebuild/full suite was run for this correction, as instructed. A different fresh judge and MAIN's off-Mac default regression/image gate remain required. Original merge history and all previously disclosed limits are retained.
