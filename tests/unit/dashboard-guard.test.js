@@ -228,6 +228,27 @@ describe("dashboard guard local-only access", () => {
     mocks.verifyDashboardAuthToken.mockResolvedValue(false);
   });
 
+  it("keeps CommandCode host credentials local even with login disabled", async () => {
+    mocks.getSettings.mockResolvedValue({ requireLogin: false });
+    const response = await proxy(request("/api/oauth/commandcode/auto-import", {
+      host: "router.example.com",
+    }));
+    expect(response.status).toBe(403);
+  });
+
+  it("requires authentication for CommandCode credentials even on loopback", async () => {
+    mocks.getSettings.mockResolvedValue({ requireLogin: false });
+    const response = await proxy(localRequest("/api/oauth/commandcode/auto-import"));
+    expect(response.status).toBe(401);
+  });
+
+  it("allows CommandCode auto-import with the local CLI token", async () => {
+    const response = await proxy(localRequest("/api/oauth/commandcode/auto-import", {
+      "x-9r-cli-token": "cli-token",
+    }));
+    expect(response).toBe(mocks.nextResponse);
+  });
+
   it("rejects local-only route from non-loopback host without CLI token", async () => {
     const response = await proxy(request("/api/mcp/filesystem/sse", {
       host: "router.example.com",
