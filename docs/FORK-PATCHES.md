@@ -1,6 +1,6 @@
 # Personal OAuth reliability fork
 
-This branch started from upstream **v0.5.86** (`39e36d3d`) and now includes upstream **v0.5.112** (`1fe586bb`) via merge commits, retaining the deployed v0.5.111 fork's reports, key/account isolation, MCP, and other custom patches. It is an independently maintained selection of upstream pull-request changes, not an upstream release or an endorsement of unmerged PRs.
+This branch started from upstream **v0.5.86** (`39e36d3d`) and now integrates stable upstream **v0.5.119** (`1855aa44`) over deployed fork `a74154a`, retaining reports, key/account isolation, MCP, and other custom patches. Upstream's package version still reads 0.5.116; use the Git revision rather than that version alone to identify this integration. It is an independently maintained selection of upstream pull-request changes, not an upstream release or an endorsement of unmerged PRs.
 
 ## Included changes
 

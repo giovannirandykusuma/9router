@@ -9,6 +9,14 @@ import {
   isFreshSocketReplayEnabled,
 } from "../config/runtimeConfig.js";
 import { dbg } from "./debugLog.js";
+import { ensureClaudeCliVersion, applyClaudeCliVersion } from "./claudeCliVersion.js";
+
+const CLAUDE_UA_PROBE = /claude-cli\/\d/;
+function hasClaudeCliHeader(headers) {
+  if (!headers) return false;
+  const entries = headers instanceof Headers ? [...headers.entries()] : Array.isArray(headers) ? headers : Object.entries(headers);
+  return entries.some(([key, value]) => String(key).toLowerCase() === "user-agent" && typeof value === "string" && CLAUDE_UA_PROBE.test(value));
+}
 
 const proxyDispatchers = new Map();
 const directDispatchers = new Map();
@@ -167,13 +175,29 @@ const MITM_BYPASS_HOSTS = [
   "api2.cursor.sh",
 ];
 const GOOGLE_DNS_SERVERS = ["8.8.8.8", "8.8.4.4"];
-const HTTPS_PORT = 443;
-const HTTP_SUCCESS_MIN = 200;
-const HTTP_SUCCESS_MAX = 300;
 
 function normalizeString(value) {
   if (value === undefined || value === null) return "";
   return String(value).trim();
+}
+
+/** scheme://host:port only — never credentials. */
+function safeProxyHost(proxyUrl) {
+  try {
+    const parsed = new URL(String(proxyUrl));
+    return `${parsed.protocol}//${parsed.hostname}${parsed.port ? `:${parsed.port}` : ""}`;
+  } catch {
+    return "unparseable-proxy-url";
+  }
+}
+
+/** Destination host only, never the full URL (which may carry a query/path). */
+function safeTargetHost(url) {
+  try {
+    return new URL(typeof url === "string" ? url : url.toString()).host;
+  } catch {
+    return "unparseable-url";
+  }
 }
 
 /**
@@ -280,8 +304,7 @@ const TLS_ECDH_CURVE = process.env.NINEROUTER_TLS_ECDH_CURVE || "X25519";
 // autoSelectFamilyAttemptTimeout = happy eyeballs (RFC 8305): race both address
 // families, fall over in 250ms — replaces the old global ipv4first flag, which fixed
 // one broken-family network by breaking the other (see claude-code#20240).
-// requestTls must stay TLS-options-only (undici 8 rejects connect-level options there
-// with UND_ERR_INVALID_ARG).
+// requestTls must stay TLS-options-only (connect-level options belong in `connect`).
 const EYEBALLS_CONNECT = { autoSelectFamily: true, autoSelectFamilyAttemptTimeout: 250 };
 function buildConnectOptions(insecure) {
   return { ...EYEBALLS_CONNECT, ecdhCurve: TLS_ECDH_CURVE, ...(insecure ? { rejectUnauthorized: false } : {}) };
@@ -402,63 +425,27 @@ async function fetchWithTlsFallback(url, options, proxyUrl, forceFreshSocket = f
   }
 }
 
-/**
- * Create HTTPS request with manual socket connection (bypass DNS)
- */
+/** Use the same fetch implementation for DNS bypass so Headers, streaming
+ * bodies, aborts, TLS hostname checks and response semantics stay intact. */
 async function createBypassRequest(parsedUrl, realIP, options) {
-  const httpsModule = await import("https");
-  const netModule = await import("net");
-  // CJS modules expose exports via .default in ESM dynamic import context
-  const https = httpsModule.default ?? httpsModule;
-  const net = netModule.default ?? netModule;
-
-  return new Promise((resolve, reject) => {
-    const socket = new net.Socket();
-
-    socket.connect(HTTPS_PORT, realIP, () => {
-      const reqOptions = {
-        socket,
-        // SNI + cert hostname are validated against the hostname the caller
-        // asked for, not the IP we connected to. This keeps the DNS-bypass
-        // (avoiding /etc/hosts MITM) while still rejecting on-path attackers
-        // that present a different cert. The MITM_BYPASS_HOSTS targets are
-        // all public-CA-issued (Google / GitHub / AWS / Cursor) so default
-        // verification works without any extra trust store.
-        servername: parsedUrl.hostname,
-        path: parsedUrl.pathname + parsedUrl.search,
-        method: options.method || "POST",
-        headers: {
-          ...options.headers,
-          Host: parsedUrl.hostname,
-        },
-      };
-
-      const req = https.request(reqOptions, (res) => {
-        const response = {
-          ok: res.statusCode >= HTTP_SUCCESS_MIN && res.statusCode < HTTP_SUCCESS_MAX,
-          status: res.statusCode,
-          statusText: res.statusMessage,
-          headers: new Map(Object.entries(res.headers)),
-          body: Readable.toWeb(res),
-          text: async () => {
-            const chunks = [];
-            for await (const chunk of res) chunks.push(chunk);
-            return Buffer.concat(chunks).toString();
-          },
-          json: async () => JSON.parse(await response.text()),
-        };
-        resolve(response);
-      });
-
-      req.on("error", reject);
-      if (options.body) {
-        req.write(typeof options.body === "string" ? options.body : JSON.stringify(options.body));
-      }
-      req.end();
-    });
-
-    socket.on("error", reject);
+  const { Agent } = await import("undici");
+  const { lookup } = await import("dns");
+  const dispatcher = new Agent({
+    connect: {
+      ...buildConnectOptions(false),
+      lookup(hostname, lookupOptions, callback) {
+        if (hostname !== parsedUrl.hostname) return lookup(hostname, lookupOptions, callback);
+        const family = realIP.includes(":") ? 6 : 4;
+        callback(null, lookupOptions?.all ? [{ address: realIP, family }] : realIP, family);
+      },
+    },
   });
+  // close() drains active response streams before releasing connections.
+  try {
+    return await rawFetch(parsedUrl.href, { ...options, dispatcher });
+  } finally {
+    void dispatcher.close().catch(() => {});
+  }
 }
 
 export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
@@ -472,6 +459,15 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
       options[key] = request[key];
     }
     url = request.url;
+  }
+  // Discovery is optional: never open a separate direct npm connection for a
+  // proxied/relayed request. Such requests retain the bundled or cached version.
+  if (hasClaudeCliHeader(options?.headers)) {
+    if (!proxyOptions?.strictProxy && !normalizeString(proxyOptions?.vercelRelayUrl)
+      && !resolveConnectionProxyUrl(String(url), proxyOptions) && !getEnvProxyUrl(String(url))) {
+      void ensureClaudeCliVersion(rawFetch);
+    }
+    options = { ...options, headers: applyClaudeCliVersion(options.headers) };
   }
   const targetUrl = typeof url === "string" ? url : url.toString();
 
@@ -494,6 +490,34 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
   const envProxyUrl = connectionProxyUrl ? null : normalizeProxyUrl(getEnvProxyUrl(targetUrl));
   const proxyUrl = connectionProxyUrl || envProxyUrl;
   const forceFreshSocket = proxyOptions?.forceFreshSocket === true || options?.forceFreshSocket === true;
+  const proxyIntended = proxyOptions?.proxyPoolId
+    || proxyOptions?.enabled === true
+    || proxyOptions?.connectionProxyEnabled === true
+    || !!normalizeString(proxyOptions?.url ?? proxyOptions?.connectionProxyUrl);
+  // Refuse before DNS bypass or transport adapters can make a direct request.
+  if (!proxyUrl && proxyOptions?.strictProxy === true && proxyIntended) {
+    throw new Error("[ProxyFetch] Proxy required but none resolved (strictProxy=true)");
+  }
+
+  // Protocol adapters that own their transport (wreq-js TLS impersonation)
+  // cannot use an undici dispatcher: they must drive the proxy themselves.
+  // Only adapters that declare `proxyCapable` opt in — any other adapter
+  // ignores the proxy URL and would leave over the direct interface, so they
+  // keep the undici path below.
+  if (proxyUrl && options?.directFetch?.proxyCapable === true) {
+    try {
+      const res = await options.directFetch(url, { ...options, proxyUrl }, proxyUrl);
+      // Reported only after the adapter that holds the tunnel returned.
+      const via = res?.headers?.get?.("x-9r-proxy-via");
+      dbg("PROXY", `PROXY ROUTING VERIFIED | ${safeTargetHost(targetUrl)} | transport=adapter | proxy=${via || safeProxyHost(proxyUrl)} | status=${res?.status}`);
+      return res;
+    } catch (err) {
+      if (proxyOptions?.strictProxy === true) {
+        throw new Error(`[ProxyFetch] Proxy required but failed (strictProxy=true): ${err.message}`);
+      }
+      throw err;
+    }
+  }
 
   // MITM DNS bypass: for known MITM-intercepted hosts, resolve real IP to avoid DNS spoof
   if (shouldBypassMitmDns(targetUrl)) {
@@ -531,25 +555,6 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
     }
   }
 
-  // Strict mode means "never leave over the direct IP". Reaching here with a
-  // proxy configured but unresolved is exactly that case — an inactive or
-  // empty pool, or every proxy removed — so refuse instead of silently
-  // exposing the real address (#4333). The catch blocks above only cover a
-  // proxy that was actually tried.
-  //
-  // Gate on a proxy being *intended*: callers like the Qoder executor set
-  // strictProxy to mean "do not replay this request directly if the proxy
-  // fails" (a replayed COSY signature returns 403), not "a proxy is required".
-  // With nothing configured they must keep working.
-  const proxyIntended = proxyOptions?.proxyPoolId
-    || proxyOptions?.enabled === true
-    || proxyOptions?.connectionProxyEnabled === true
-    || !!normalizeString(proxyOptions?.url ?? proxyOptions?.connectionProxyUrl);
-  if (proxyOptions?.strictProxy === true && proxyIntended) {
-    throw new Error("[ProxyFetch] Proxy required but none resolved (strictProxy=true)");
-  }
-
-  // got-scraping disabled — use native fetch directly
   // (Re-enable per-host by wrapping with tryGotScrapingFetch when needed)
   return fetchWithTlsFallback(url, options, null, forceFreshSocket);
 }

@@ -26,6 +26,8 @@ npx --no-install vitest run \
   unit/codex-profiles.test.js \
   unit/combo-caps-resolver.test.js \
   unit/v1-models-thinking-levels.test.js \
+  unit/claude-cli-version.test.js \
+  unit/proxy-fingerprint-policy.test.js \
   unit/responses-completed-output.test.js \
   unit/usage-api-key-attribution.test.js \
   unit/openai-responses-terminal-event.test.js \

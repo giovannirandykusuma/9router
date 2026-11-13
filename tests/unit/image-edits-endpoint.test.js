@@ -1,6 +1,6 @@
 // /v1/images/edits: OpenAI multipart/JSON edit requests are translated into the
 // generations body (`images` = data URLs) and run through the same pipeline,
-// so Codex GPT Image receives action "edit" with the reference image attached.
+// so Codex GPT Image receives the reference image on native or Responses edits.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -149,8 +149,18 @@ describe("POST /v1/images/edits", () => {
 });
 
 describe("Codex provider receives an edit action", () => {
-  it("builds action=edit with the reference image as input_image", () => {
-    const out = codex.buildBody("gpt-image-2.5", { prompt: "make it green", images: [PNG_DATA_URL] });
+  it("uses native edits for default output controls with the reference image attached", () => {
+    const body = { prompt: "make it green", images: [PNG_DATA_URL] };
+    expect(codex.buildUrl("gpt-image-2.5", {}, body)).toMatch(/\/images\/edits$/);
+    expect(codex.buildBody("gpt-image-2.5", body)).toMatchObject({
+      model: "gpt-image-2.5", prompt: "make it green", images: [{ image_url: PNG_DATA_URL }],
+    });
+  });
+
+  it("keeps Responses edit action and input_image when explicit controls require it", () => {
+    const body = { prompt: "make it green", images: [PNG_DATA_URL], size: "1024x1024" };
+    expect(codex.buildUrl("gpt-image-2.5", {}, body)).toMatch(/\/responses$/);
+    const out = codex.buildBody("gpt-image-2.5", body);
     expect(out.tools[0]).toMatchObject({ type: "image_generation", action: "edit", model: "gpt-image-2.5" });
     const content = out.input[0].content;
     expect(content.find((c) => c.type === "input_image").image_url).toBe(PNG_DATA_URL);

@@ -26,6 +26,14 @@ function connect(provider, models) {
 }
 
 describe("/v1/models reasoning effort discovery", () => {
+  it("preserves upstream top-level thinking levels on active Claude models", async () => {
+    connect("claude", ["claude-haiku-5-5"]);
+    const models = await buildModelsList(["llm"]);
+    const entry = models.find((m) => m.id.endsWith("/claude-haiku-5-5"));
+    expect(entry.thinking_levels).toEqual(getThinkingLevels("claude", "claude-haiku-5-5"));
+    expect(entry.capabilities.thinkingLevels).toEqual(entry.thinking_levels);
+  });
+
   it("publishes the registry for static models when there are no connections", async () => {
     const models = await buildModelsList(["llm"]);
     const sol = models.find((m) => m.id === "cx/gpt-6.1-sol");
