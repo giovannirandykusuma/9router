@@ -78,6 +78,8 @@ ENV PORT=20128
 ENV HOSTNAME=0.0.0.0
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV DATA_DIR=/app/data
+# Public build identity, separate from the upstream release in package.json.
+ENV APP_VERSION=${APP_VERSION}
 
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/static ./.next/static

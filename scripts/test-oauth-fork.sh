@@ -7,6 +7,7 @@ cd "$(dirname "$0")/../tests"
 # exclude only those exact cases from this image gate.
 node ../scripts/check-fetch-web-api.mjs ..
 npx --no-install vitest run \
+  unit/app-version.test.js \
   unit/openai-responses-optional-params.test.js \
   translator/thinking-unified.test.js \
   unit/cache-affinity-strategy.test.js \

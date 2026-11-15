@@ -57,5 +57,12 @@ export async function GET() {
   const currentVersion = pkg.version;
   const hasUpdate = latestVersion ? compareVersions(latestVersion, currentVersion) > 0 : false;
 
-  return Response.json({ currentVersion, latestVersion, hasUpdate });
+  // Only publish the known fork build format for this exact app release.
+  // Do not let arbitrary runtime environment values become public metadata.
+  const candidateBuild = process.env.APP_VERSION || "";
+  const buildVersion = candidateBuild.startsWith(`${currentVersion}-fork-`) &&
+    /^[0-9]+\.[0-9]+\.[0-9]+-fork-[0-9a-f]{40}$/.test(candidateBuild)
+    ? candidateBuild : null;
+
+  return Response.json({ currentVersion, latestVersion, hasUpdate, buildVersion });
 }
