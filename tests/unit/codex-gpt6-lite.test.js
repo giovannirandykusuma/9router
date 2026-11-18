@@ -11,6 +11,28 @@ const credentials = { connectionId: "fixture", accessToken: "fixture-token" };
 afterEach(() => vi.restoreAllMocks());
 
 describe("Codex GPT-6 Sol/Luna transport", () => {
+  it.each([["gpt-6.2-sol", 500000], ["gpt-6.2-astra", 272000]])(
+    "lists %s with verified limits and preserves conservative effort forwarding",
+    (model, contextWindow) => {
+      const entry = getModelsByProviderId("codex").find((item) => item.id === model);
+      expect(entry?.responsesLite).toBe(true);
+      expect(entry?.upstreamModelId).toBeUndefined();
+      expect(getCapabilitiesForModel("codex", model)).toMatchObject({
+        vision: true, reasoning: true, search: true, tools: true, audioInput: false,
+        thinkingFormat: "openai", thinkingCanDisable: false, contextWindow, maxOutput: null,
+      });
+      expect(getPricingForModel("codex", model)).toBeNull();
+      expect(getThinkingLevels("codex", model)).toEqual(["low", "medium", "high", "xhigh", "max"]);
+      const executor = new CodexExecutor();
+      expect(executor.buildHeaders(credentials, true, null, model)["x-openai-internal-codex-responses-lite"]).toBe("true");
+      // Upstream lists ultra for automatic delegation, not a verified gateway mode.
+      for (const [requested, forwarded] of [["low", "low"], ["none", "low"], ["minimal", "low"], ["max", "max"], ["ultra", "max"]]) {
+        const body = executor.transformRequest(model, { model, input: "hello", reasoning: { effort: requested } }, true, credentials);
+        expect(body.model).toBe(model);
+        expect(body.reasoning).toEqual({ effort: forwarded, context: "all_turns" });
+      }
+    },
+  );
   it.each(["gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna"])("lists %s with Codex capabilities", (model) => {
     const entry = getModelsByProviderId("codex").find((item) => item.id === model);
     expect(entry?.responsesLite).toBe(true);

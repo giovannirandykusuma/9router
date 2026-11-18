@@ -26,6 +26,24 @@ function connect(provider, models) {
 }
 
 describe("/v1/models reasoning effort discovery", () => {
+  it.each([false, true])("discovers verified GPT-6.2 metadata (active connection: %s)", async (active) => {
+    if (active) connect("codex", ["gpt-6.2-sol", "gpt-6.2-astra"]);
+    const models = await buildModelsList(["llm"]);
+    for (const [id, contextWindow] of [["gpt-6.2-sol", 500000], ["gpt-6.2-astra", 272000]]) {
+      const matches = models.filter((m) => m.id === `cx/${id}`);
+      expect(matches).toHaveLength(1);
+      expect(matches[0].capabilities).toMatchObject({
+        vision: true, tools: true, reasoning: true, audioInput: false, contextWindow, maxOutput: null,
+        thinkingLevels: ["low", "medium", "high", "xhigh", "max"],
+      });
+      expect(matches[0]).not.toHaveProperty("max_completion_tokens");
+      if (active) {
+        expect(matches[0].context_length).toBe(contextWindow);
+        expect(matches[0].thinking_levels).toEqual(["low", "medium", "high", "xhigh", "max"]);
+      }
+      expect(models.some((m) => m.id === `cx/${id}[1m]` || m.id === `cx/${id}-review`)).toBe(false);
+    }
+  });
   it("preserves upstream top-level thinking levels on active Claude models", async () => {
     connect("claude", ["claude-haiku-5-5"]);
     const models = await buildModelsList(["llm"]);
