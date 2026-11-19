@@ -65,6 +65,20 @@ describe("dashboard guard public LLM API access", () => {
     mocks.verifyDashboardAuthToken.mockResolvedValue(false);
   });
 
+  it("keeps custom model PATCH behind dashboard auth even with an LLM API key", async () => {
+    const req = {
+      ...request("/api/models/custom", { authorization: "Bearer llm-key" }),
+      method: "PATCH",
+    };
+    mocks.validateApiKey.mockResolvedValue(true);
+    expect(await proxy(req)).toMatchObject({ status: 401 });
+    expect(mocks.validateApiKey).not.toHaveBeenCalled();
+
+    req.cookies.get.mockReturnValue({ value: "dashboard-session" });
+    mocks.verifyDashboardAuthToken.mockResolvedValue(true);
+    expect(await proxy(req)).toBe(mocks.nextResponse);
+  });
+
   it("allows loopback public LLM API without API key", async () => {
     const response = await proxy(localRequest("/v1/chat/completions", { host: "localhost:20128" }));
 

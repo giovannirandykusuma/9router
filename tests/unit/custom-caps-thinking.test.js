@@ -51,6 +51,35 @@ describe("vllm thinking wire (profile qwen, wire auto)", () => {
   });
 });
 
+describe("custom Chat wires on other transports", () => {
+  it.each([
+    { profile: "qwen" },
+    { profile: "qwen", thinkingWire: "vllm" },
+    { profile: "qwen", thinkingWire: "openai" },
+    { profile: "qwen", thinkingWire: "qwen-dashscope" },
+  ])("uses the native thinking shape for $profile / $thinkingWire", (profile) => {
+    const anthropic = "anthropic-compatible-messages";
+    setCustomCapsSource(createMapSource(new Map([
+      [`${P}/${M}`, profile],
+      [`${anthropic}/${M}`, profile],
+    ])));
+    const input = () => ({
+      reasoning_effort: "high",
+      chat_template_kwargs: { enable_thinking: true },
+      thinking_budget: 4096,
+    });
+    const responses = run(input(), { target: "openai-responses" });
+    const messages = run(input(), { provider: anthropic, target: "claude" });
+    for (const out of [responses, messages]) {
+      for (const key of ["chat_template_kwargs", "thinking_budget", "enable_thinking", "reasoning_effort"]) {
+        expect.soft(out).not.toHaveProperty(key);
+      }
+    }
+    expect(responses.reasoning).toEqual({ effort: "high", summary: "auto" });
+    expect(messages.thinking).toMatchObject({ type: "enabled", budget_tokens: expect.any(Number) });
+  });
+});
+
 describe("other wires", () => {
   it("none → no thinking fields at all; enable_thinking kwarg removed, other kwargs kept", () => {
     install({ profile: "qwen", thinkingWire: "none" });

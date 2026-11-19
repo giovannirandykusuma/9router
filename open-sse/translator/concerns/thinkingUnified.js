@@ -127,6 +127,7 @@ function openAIThinkingDisplay(body) {
 }
 
 const NATIVE_ONLY_FORMATS = new Set(["gemini-level", "gemini-budget", "claude-budget", "claude-adaptive", "kiro"]);
+const CUSTOM_CHAT_FORMATS = new Set(["vllm", "openai", "qwen"]);
 
 // Self-hosted gateways (vLLM/SGLang) validate thinking.budget_tokens; first-party
 // DeepSeek ignores it. Only dynamic compat nodes opt into the passthrough.
@@ -134,24 +135,32 @@ const isOpenAICompatibleNode = (provider) => String(provider || "").startsWith("
 
 function resolveFormat(targetFormat, model, provider) {
   if (targetFormat === "commandcode") return "commandcode";
-  // Admin-pinned thinking wire for a custom model (customCaps.js) beats every other source,
-  // except native-only formats, which cannot be sent on an OpenAI wire.
   const wireFmt = resolveThinkingWireFormat(provider, model);
-  const openAIWire = targetFormat === "openai" || targetFormat === "openai-responses";
-  if (wireFmt && !(openAIWire && NATIVE_ONLY_FORMATS.has(wireFmt))) return wireFmt;
-  // A multi-endpoint provider can declare, per transports[] entry, the thinking shape that
-  // endpoint accepts. It wins over the model's thinkingFormat, which describes the Chat wire:
-  // strict /responses upstreams (Meta, OpenCode Go) reject Chat-shaped reasoning_effort /
-  // thinking:{type} and need reasoning:{effort,summary} instead.
+  if (wireFmt === "none") return wireFmt;
+  // A transport's declared shape wins over both profiles and model detection.
+  // Strict /responses upstreams reject Chat-shaped reasoning_effort and thinking:{type}.
   const transportFmt = provider
     ? PROVIDERS[provider]?.transports?.find((t) => t.format === targetFormat)?.thinkingFormat
     : null;
   if (transportFmt) return transportFmt;
+  const openAIWire = targetFormat === "openai" || targetFormat === "openai-responses";
+  const incompatibleCustomChat = CUSTOM_CHAT_FORMATS.has(wireFmt)
+    && (targetFormat !== "openai" || !isOpenAICompatibleNode(provider));
+  const incompatibleCustomNative = (
+    wireFmt === "claude-adaptive" && targetFormat !== "claude"
+  ) || (
+    wireFmt === "gemini-level" && FORMAT_TO_NATIVE[targetFormat] !== "gemini-budget"
+  );
+  const incompatibleCustomWire = incompatibleCustomChat || incompatibleCustomNative;
+  if (wireFmt && !incompatibleCustomWire) return wireFmt;
+
   const providerFmt = provider ? PROVIDERS[provider]?.thinkingFormat : null;
   if (providerFmt) return providerFmt;
+  // The custom format is also stored in caps.thinkingFormat for capability consumers.
+  // Do not read an incompatible format back from there after rejecting it above.
+  if (incompatibleCustomWire && targetFormat === "openai-responses") return "openai-responses";
   const caps = getCapabilitiesForModel(provider, model);
-  const isOpenAIWire = targetFormat === "openai" || targetFormat === "openai-responses";
-  if (caps.thinkingFormat && !(isOpenAIWire && NATIVE_ONLY_FORMATS.has(caps.thinkingFormat))) {
+  if (!incompatibleCustomWire && caps.thinkingFormat && !(openAIWire && NATIVE_ONLY_FORMATS.has(caps.thinkingFormat))) {
     return caps.thinkingFormat;
   }
   return FORMAT_TO_NATIVE[targetFormat] || "openai";
