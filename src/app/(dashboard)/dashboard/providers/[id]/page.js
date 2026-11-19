@@ -9,7 +9,7 @@ import { Card, Button, Badge, Input, Modal, CardSkeleton, OAuthModal, KiroOAuthW
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, WEB_COOKIE_PROVIDERS, getProviderAlias, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS } from "@/shared/constants/providers";
 import { getModelsByProviderId, getModelKind } from "@/shared/constants/models";
 import { getThinkingLevels } from "open-sse/providers/thinkingLevels.js";
-import { setCustomCapsSource, createMapSource, buildCustomCapsMap } from "open-sse/providers/customCaps.js";
+import { installBrowserCustomCaps } from "@/shared/utils/installBrowserCustomCaps";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { useModelCaps } from "@/shared/hooks/useModelCaps";
 import { translate } from "@/i18n/runtime";
@@ -177,7 +177,7 @@ export default function ProviderDetailPage() {
   // useMemo (not useEffect) so the same render that reads thinking levels sees the new source.
   // Not cleared on unmount: the next page that installs overwrites it.
   useMemo(() => {
-    setCustomCapsSource(createMapSource(buildCustomCapsMap(customModels)));
+    installBrowserCustomCaps(customModels); // no-op during SSR (keeps server source)
   }, [customModels]);
   
   const isOpenAICompatible = isOpenAICompatibleProvider(providerId);
