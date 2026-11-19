@@ -28,6 +28,7 @@ export {
   getCustomModels,
   addCustomModel,
   deleteCustomModel,
+  setCustomModelCapsProfile,
   getMitmAlias,
   setMitmAliasAll,
   getApiKeys,

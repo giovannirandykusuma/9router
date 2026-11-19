@@ -19,7 +19,7 @@ export {
   getGatewayKeys, getGatewayKeyById, createGatewayKey, deleteGatewayKey,
   validateGatewayKey, getGrantsForKey, getGrantsForKeyDetailed, setGrants,
   getModelAliases, setModelAlias, deleteModelAlias,
-  getCustomModels, addCustomModel, deleteCustomModel,
+  getCustomModels, addCustomModel, deleteCustomModel, setCustomModelCapsProfile,
   getMitmAlias, setMitmAliasAll,
   getPricing, getPricingForModel, updatePricing, resetPricing, resetAllPricing,
   exportDb, importDb,

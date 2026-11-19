@@ -50,6 +50,20 @@ export async function addCustomModel({ providerAlias, id, type = "llm", name, ca
   return added;
 }
 
+export async function setCustomModelCapsProfile({ providerAlias, id, type = "llm", capsProfile }) {
+  const k = customKey(providerAlias, id, type);
+  const db = await getAdapter();
+  return db.transaction(() => {
+    const row = db.get(`SELECT value FROM kv WHERE scope = 'customModels' AND key = ?`, [k]);
+    if (!row) return false;
+    const next = { ...parseJson(row.value) };
+    if (capsProfile === null) delete next.capsProfile;
+    else next.capsProfile = capsProfile;
+    db.run(`UPDATE kv SET value = ? WHERE scope = 'customModels' AND key = ?`, [stringifyJson(next), k]);
+    return true;
+  });
+}
+
 export async function deleteCustomModel({ providerAlias, id, type = "llm" }) {
   await customKv.remove(customKey(providerAlias, id, type));
 }

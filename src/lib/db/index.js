@@ -55,7 +55,7 @@ export {
 // Aliases (model + custom + mitm)
 export {
   getModelAliases, setModelAlias, deleteModelAlias,
-  getCustomModels, addCustomModel, deleteCustomModel,
+  getCustomModels, addCustomModel, deleteCustomModel, setCustomModelCapsProfile,
   getMitmAlias, setMitmAliasAll,
 } from "./repos/aliasRepo.js";
 

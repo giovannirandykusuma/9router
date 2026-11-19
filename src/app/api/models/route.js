@@ -70,7 +70,7 @@ export async function GET() {
           reasoning: c.reasoning,
           contextWindow: c.contextWindow,
           maxOutput: c.maxOutput,
-          ...(m.caps || {}),
+          ...(m.capsProfile ? {} : (m.caps || {})),
         },
       });
     }
