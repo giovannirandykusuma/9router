@@ -8,6 +8,9 @@ export async function register() {
     const { installCatalogSource } = await import("open-sse/providers/catalogOverride.js");
     await installCatalogSource();
 
+    const { installCustomCapsSource } = await import("@/lib/customCapsLoader.js");
+    await installCustomCapsSource();
+
     const { startModelCatalogSync } = await import("@/lib/modelCatalog/sync.js");
     startModelCatalogSync();
   }

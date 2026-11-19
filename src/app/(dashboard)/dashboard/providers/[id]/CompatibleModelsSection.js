@@ -4,7 +4,9 @@ import { useState } from "react";
 import PropTypes from "prop-types";
 import { Button } from "@/shared/components";
 import { getProviderCustomModelRows } from "@/shared/utils/providerCustomModels";
-function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias, onTest, testStatus, isTesting }) {
+import CustomCapsModal from "./CustomCapsModal";
+
+function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias, onTest, testStatus, isTesting, onTune, profileBadge }) {
   const borderColor = testStatus === "ok"
     ? "border-green-500/40"
     : testStatus === "error"
@@ -26,7 +28,14 @@ function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias,
         {testStatus === "ok" ? "check_circle" : testStatus === "error" ? "cancel" : "smart_toy"}
       </span>
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium truncate">{modelId}</p>
+        <div className="flex items-center gap-2 min-w-0">
+          <p className="text-sm font-medium truncate">{modelId}</p>
+          {profileBadge && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary font-medium shrink-0" title="Capability profile">
+              {profileBadge}
+            </span>
+          )}
+        </div>
         <div className="flex items-center gap-1 mt-1">
           <code className="text-xs text-text-muted font-mono bg-sidebar px-1.5 py-0.5 rounded">{fullModel}</code>
           <div className="relative group/btn">
@@ -58,6 +67,19 @@ function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias,
               </span>
             </div>
           )}
+          {onTune && (
+            <div className="relative group/btn">
+              <button
+                onClick={onTune}
+                className="p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary transition-colors"
+              >
+                <span className="material-symbols-outlined text-sm">tune</span>
+              </button>
+              <span className="pointer-events-none absolute top-5 left-1/2 -translate-x-1/2 text-[10px] text-text-muted whitespace-nowrap opacity-0 group-hover/btn:opacity-100 transition-opacity">
+                Capabilities
+              </span>
+            </div>
+          )}
         </div>
       </div>
       <button
@@ -71,8 +93,9 @@ function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias,
   );
 }
 
-export default function CompatibleModelsSection({ providerStorageAlias, providerDisplayAlias, modelAliases, customModels, copied, onCopy, onDeleteAlias, onAddCustomModel, onDeleteCustomModel, connections, isAnthropic }) {
+export default function CompatibleModelsSection({ providerStorageAlias, providerDisplayAlias, modelAliases, customModels, copied, onCopy, onDeleteAlias, onAddCustomModel, onDeleteCustomModel, connections, isAnthropic, onCapsChanged }) {
   const [newModel, setNewModel] = useState("");
+  const [capsModelId, setCapsModelId] = useState(null);
   const [adding, setAdding] = useState(false);
   const [importing, setImporting] = useState(false);
   const [testingModelId, setTestingModelId] = useState(null);
@@ -160,6 +183,11 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
 
   const canImport = connections.some((conn) => conn.isActive !== false);
 
+  const findCustomRecord = (modelId) => (customModels || []).find(
+    (m) => m && m.providerAlias === providerStorageAlias && m.id === modelId && (m.type || "llm") === "llm"
+  );
+  const capsRecord = capsModelId ? findCustomRecord(capsModelId) : null;
+
   return (
     <div className="flex flex-col gap-4">
       <p className="text-sm text-text-muted">
@@ -206,9 +234,24 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
               onTest={connections.length > 0 ? () => handleTestModel(id) : undefined}
               testStatus={modelTestResults[id]}
               isTesting={testingModelId === id}
+              onTune={source === "custom" ? () => setCapsModelId(id) : undefined}
+              profileBadge={source === "custom" ? profileBadgeFor(findCustomRecord(id)) : null}
             />
           ))}
         </div>
+      )}
+
+      {capsModelId && (
+        <CustomCapsModal
+          key={capsModelId}
+          isOpen
+          modelId={capsModelId}
+          providerAlias={providerStorageAlias}
+          capsProfile={capsRecord?.capsProfile || null}
+          connections={connections}
+          onSaved={onCapsChanged}
+          onClose={() => setCapsModelId(null)}
+        />
       )}
     </div>
   );
@@ -229,4 +272,14 @@ CompatibleModelsSection.propTypes = {
     isActive: PropTypes.bool,
   })).isRequired,
   isAnthropic: PropTypes.bool,
+  onCapsChanged: PropTypes.func,
 };
+
+function profileBadgeFor(record) {
+  const cp = record?.capsProfile;
+  if (!cp || typeof cp !== "object") return null;
+  if (cp.profile && cp.profile !== "auto") return cp.profile;
+  const hasOverrides = cp.overrides && typeof cp.overrides === "object" && Object.keys(cp.overrides).length > 0;
+  if ((cp.thinkingWire && cp.thinkingWire !== "auto") || hasOverrides) return "custom";
+  return null;
+}
