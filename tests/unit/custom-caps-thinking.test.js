@@ -96,15 +96,22 @@ describe.each([
     expect(out).not.toHaveProperty("thinking_budget");
   });
 
-  it("uses the native shape for a saved Auto profile but preserves unprofiled behavior", () => {
-    const model = "qwen3-32b";
-    expect(translate(model, { reasoning_effort: "high" })).toMatchObject({ enable_thinking: true });
-    setCustomCapsSource(createMapSource(new Map([[`${provider}/${model}`, { overrides: { contextWindow: 65536 } }]])));
+  it.each([
+    ["qwen3-32b", { contextWindow: 65536 }, { enable_thinking: true }],
+    ["deepseek-r1", { contextWindow: 65536 }, { thinking: { type: "enabled" } }],
+    ["opaque", { reasoning: true }, {}],
+  ])("uses native thinking for saved Auto profile %s without changing unprofiled behavior", (model, overrides, baseline) => {
+    expect(translate(model, { reasoning_effort: "high" })).toMatchObject(baseline);
+    setCustomCapsSource(createMapSource(new Map([[`${provider}/${model}`, { overrides }]])));
     const out = translate(model, { reasoning_effort: "high" });
     expect(out).not.toHaveProperty("enable_thinking");
     expect(out).not.toHaveProperty("thinking_budget");
+    expect(out).not.toHaveProperty("reasoning_effort");
     if (format === "claude") expect(out.thinking).toMatchObject({ type: "enabled", budget_tokens: expect.any(Number) });
-    else expect(out.reasoning).toMatchObject({ effort: "high" });
+    else {
+      expect(out).not.toHaveProperty("thinking");
+      expect(out.reasoning).toMatchObject({ effort: "high" });
+    }
   });
 });
 

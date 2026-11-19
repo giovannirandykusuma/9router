@@ -127,7 +127,18 @@ function openAIThinkingDisplay(body) {
 }
 
 const NATIVE_ONLY_FORMATS = new Set(["gemini-level", "gemini-budget", "claude-budget", "claude-adaptive", "kiro"]);
-const CUSTOM_CHAT_FORMATS = new Set(["vllm", "openai", "qwen"]);
+// Saved profiles may select only shapes accepted by their outbound transport.
+// Chat keeps existing model-specific extensions, except on known native-only wires.
+const PROFILE_NATIVE_FORMATS = {
+  "openai-responses": ["openai-responses"],
+  "openai-response": ["openai-responses"],
+  claude: ["claude-budget", "claude-adaptive"],
+  gemini: ["gemini-budget", "gemini-level"],
+  "gemini-cli": ["gemini-budget", "gemini-level"],
+  vertex: ["gemini-budget", "gemini-level"],
+  antigravity: ["gemini-budget", "gemini-level"],
+  kiro: ["kiro"],
+};
 
 // Self-hosted gateways (vLLM/SGLang) validate thinking.budget_tokens; first-party
 // DeepSeek ignores it. Only dynamic compat nodes opt into the passthrough.
@@ -146,21 +157,21 @@ function resolveFormat(targetFormat, provider, detectedFormat, customFormat, has
     ? PROVIDERS[provider]?.transports?.find((t) => t.format === targetFormat)?.thinkingFormat
     : null;
   if (transportFmt) return transportFmt;
-  const openAIWire = targetFormat === "openai" || targetFormat === "openai-responses";
-  // A saved Auto profile has no explicit wire but still inherits model-name detection.
-  // Leave unprofiled detection unchanged.
-  const effectiveFormat = customFormat || detectedFormat;
-  const incompatibleCustomWire = hasCustomCaps && (
-    (CUSTOM_CHAT_FORMATS.has(effectiveFormat) && !isCompatibleChat(targetFormat, provider)) ||
-    (effectiveFormat === "claude-adaptive" && targetFormat !== "claude") ||
-    (effectiveFormat === "gemini-level" && FORMAT_TO_NATIVE[targetFormat] !== "gemini-budget")
-  );
-  if (customFormat && !incompatibleCustomWire) return customFormat;
-
   const providerFmt = provider ? PROVIDERS[provider]?.thinkingFormat : null;
+  if (hasCustomCaps) {
+    const effectiveFormat = customFormat || providerFmt || detectedFormat;
+    const nativeFormats = PROFILE_NATIVE_FORMATS[targetFormat];
+    if (nativeFormats) return nativeFormats.includes(effectiveFormat) ? effectiveFormat : nativeFormats[0];
+    if (isCompatibleChat(targetFormat, provider)) {
+      if (!effectiveFormat || NATIVE_ONLY_FORMATS.has(effectiveFormat) || effectiveFormat === "openai-responses") return "openai";
+      return effectiveFormat;
+    }
+    return FORMAT_TO_NATIVE[targetFormat] || "openai";
+  }
+  // Preserve the existing provider and catalog behavior when no profile is saved.
   if (providerFmt) return providerFmt;
-  if (incompatibleCustomWire && targetFormat === "openai-responses") return "openai-responses";
-  if (!incompatibleCustomWire && detectedFormat && !(openAIWire && NATIVE_ONLY_FORMATS.has(detectedFormat))) {
+  const openAIWire = targetFormat === "openai" || targetFormat === "openai-responses";
+  if (detectedFormat && !(openAIWire && NATIVE_ONLY_FORMATS.has(detectedFormat))) {
     return detectedFormat;
   }
   return FORMAT_TO_NATIVE[targetFormat] || "openai";
