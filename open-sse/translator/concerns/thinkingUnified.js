@@ -133,10 +133,13 @@ const CUSTOM_CHAT_FORMATS = new Set(["vllm", "openai", "qwen"]);
 // DeepSeek ignores it. Only dynamic compat nodes opt into the passthrough.
 const isOpenAICompatibleNode = (provider) => String(provider || "").startsWith("openai-compatible-");
 
-function resolveFormat(targetFormat, model, provider) {
+function isCompatibleChat(targetFormat, provider) {
+  return targetFormat === "openai" && isOpenAICompatibleNode(provider);
+}
+
+function resolveFormat(targetFormat, provider, detectedFormat, customFormat, hasCustomCaps) {
   if (targetFormat === "commandcode") return "commandcode";
-  const wireFmt = resolveThinkingWireFormat(provider, model);
-  if (wireFmt === "none") return wireFmt;
+  if (customFormat === "none") return customFormat;
   // A transport's declared shape wins over both profiles and model detection.
   // Strict /responses upstreams reject Chat-shaped reasoning_effort and thinking:{type}.
   const transportFmt = provider
@@ -144,24 +147,21 @@ function resolveFormat(targetFormat, model, provider) {
     : null;
   if (transportFmt) return transportFmt;
   const openAIWire = targetFormat === "openai" || targetFormat === "openai-responses";
-  const incompatibleCustomChat = CUSTOM_CHAT_FORMATS.has(wireFmt)
-    && (targetFormat !== "openai" || !isOpenAICompatibleNode(provider));
-  const incompatibleCustomNative = (
-    wireFmt === "claude-adaptive" && targetFormat !== "claude"
-  ) || (
-    wireFmt === "gemini-level" && FORMAT_TO_NATIVE[targetFormat] !== "gemini-budget"
+  // A saved Auto profile has no explicit wire but still inherits model-name detection.
+  // Leave unprofiled detection unchanged.
+  const effectiveFormat = customFormat || detectedFormat;
+  const incompatibleCustomWire = hasCustomCaps && (
+    (CUSTOM_CHAT_FORMATS.has(effectiveFormat) && !isCompatibleChat(targetFormat, provider)) ||
+    (effectiveFormat === "claude-adaptive" && targetFormat !== "claude") ||
+    (effectiveFormat === "gemini-level" && FORMAT_TO_NATIVE[targetFormat] !== "gemini-budget")
   );
-  const incompatibleCustomWire = incompatibleCustomChat || incompatibleCustomNative;
-  if (wireFmt && !incompatibleCustomWire) return wireFmt;
+  if (customFormat && !incompatibleCustomWire) return customFormat;
 
   const providerFmt = provider ? PROVIDERS[provider]?.thinkingFormat : null;
   if (providerFmt) return providerFmt;
-  // The custom format is also stored in caps.thinkingFormat for capability consumers.
-  // Do not read an incompatible format back from there after rejecting it above.
   if (incompatibleCustomWire && targetFormat === "openai-responses") return "openai-responses";
-  const caps = getCapabilitiesForModel(provider, model);
-  if (!incompatibleCustomWire && caps.thinkingFormat && !(openAIWire && NATIVE_ONLY_FORMATS.has(caps.thinkingFormat))) {
-    return caps.thinkingFormat;
+  if (!incompatibleCustomWire && detectedFormat && !(openAIWire && NATIVE_ONLY_FORMATS.has(detectedFormat))) {
+    return detectedFormat;
   }
   return FORMAT_TO_NATIVE[targetFormat] || "openai";
 }
@@ -263,18 +263,22 @@ function ensureGeminiOutputFloor(body, floor, caps) {
 // Strip every known thinking field from a body (used before re-applying / when unsupported).
 // stripKwargs: also drop chat_template_kwargs.enable_thinking (vllm wire). Only for models
 // with a custom caps entry, so a client's own kwargs elsewhere still pass through untouched.
-function stripAll(body, stripKwargs = false) {
+function stripChatThinking(body, stripKwargs) {
   const kw = body.chat_template_kwargs;
   if (stripKwargs && kw && typeof kw === "object" && !Array.isArray(kw)) {
     delete kw.enable_thinking;
     if (Object.keys(kw).length === 0) delete body.chat_template_kwargs;
   }
+  delete body.enable_thinking;
+  delete body.thinking_budget;
+}
+
+function stripAll(body, stripKwargs = false) {
+  stripChatThinking(body, stripKwargs);
   delete body.thinking;
   delete body.reasoning_effort;
   delete body.reasoning;
   delete body.thinkingConfig;
-  delete body.enable_thinking;
-  delete body.thinking_budget;
   delete body.output_config;
   if (body.generationConfig) delete body.generationConfig.thinkingConfig;
   if (body.request?.generationConfig) delete body.request.generationConfig.thinkingConfig;
@@ -502,12 +506,14 @@ export function applyThinking(targetFormat, model, body, provider = null, intent
     stripAll(body, hasCustomCaps);
     return body;
   }
+  const customFormat = hasCustomCaps ? resolveThinkingWireFormat(provider, cleanModel) : null;
   if (!cfg) {
-    if (hasCustomCaps && resolveThinkingWireFormat(provider, cleanModel) === "none") stripAll(body, true);
+    if (customFormat === "none") stripAll(body, true);
+    else if (hasCustomCaps && !isCompatibleChat(targetFormat, provider)) stripChatThinking(body, true);
     return body;
   }
 
-  const fmt = resolveFormat(targetFormat, cleanModel, provider);
+  const fmt = resolveFormat(targetFormat, provider, caps.thinkingFormat, customFormat, hasCustomCaps);
   const supportedLevels = getThinkingLevels(provider, cleanModel);
   // Anthropic's `display` (summarized | omitted) decides whether thinking text
   // comes back at all; keep what the client asked for instead of resetting it.

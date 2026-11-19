@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { applyThinking } from "../../open-sse/translator/concerns/thinkingUnified.js";
+import { translateRequest } from "../../open-sse/translator/index.js";
 import { getThinkingLevels } from "../../open-sse/providers/thinkingLevels.js";
 import { setCustomCapsSource, createMapSource } from "../../open-sse/providers/customCaps.js";
 
@@ -77,6 +78,33 @@ describe("custom Chat wires on other transports", () => {
     }
     expect(responses.reasoning).toEqual({ effort: "high", summary: "auto" });
     expect(messages.thinking).toMatchObject({ type: "enabled", budget_tokens: expect.any(Number) });
+  });
+});
+
+describe.each([
+  ["openai-responses", "openai-compatible-responses-test", { input: "hi" }],
+  ["claude", "anthropic-compatible-test", { messages: [{ role: "user", content: "hi" }] }],
+])("same-format %s translation with custom capabilities", (format, provider, input) => {
+  function translate(model, fields) {
+    return translateRequest(format, format, model, { ...structuredClone(input), ...fields }, false, null, provider);
+  }
+
+  it("strips vLLM controls even without other thinking intent", () => {
+    setCustomCapsSource(createMapSource(new Map([[`${provider}/${M}`, { profile: "qwen" }]])));
+    const out = translate(M, { chat_template_kwargs: { enable_thinking: false }, thinking_budget: 4096 });
+    expect(out).not.toHaveProperty("chat_template_kwargs");
+    expect(out).not.toHaveProperty("thinking_budget");
+  });
+
+  it("uses the native shape for a saved Auto profile but preserves unprofiled behavior", () => {
+    const model = "qwen3-32b";
+    expect(translate(model, { reasoning_effort: "high" })).toMatchObject({ enable_thinking: true });
+    setCustomCapsSource(createMapSource(new Map([[`${provider}/${model}`, { overrides: { contextWindow: 65536 } }]])));
+    const out = translate(model, { reasoning_effort: "high" });
+    expect(out).not.toHaveProperty("enable_thinking");
+    expect(out).not.toHaveProperty("thinking_budget");
+    if (format === "claude") expect(out.thinking).toMatchObject({ type: "enabled", budget_tokens: expect.any(Number) });
+    else expect(out.reasoning).toMatchObject({ effort: "high" });
   });
 });
 

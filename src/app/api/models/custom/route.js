@@ -93,7 +93,8 @@ export async function DELETE(request) {
     await deleteCustomModel({ providerAlias, id, type });
     await refreshCustomCaps().catch(() => {});
     return NextResponse.json({ success: true });
-  } catch {
+  } catch (error) {
+    console.log("Error deleting custom model:", error);
     return NextResponse.json({ error: "Failed to delete custom model" }, { status: 500 });
   }
 }
