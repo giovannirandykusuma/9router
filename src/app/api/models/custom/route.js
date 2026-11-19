@@ -66,10 +66,10 @@ export async function PATCH(request) {
   if (type !== "llm" || (!isOpenAICompatibleProvider(providerAlias) && !isAnthropicCompatibleProvider(providerAlias))) {
     return NextResponse.json({ error: "Capability profiles require a compatible LLM" }, { status: 400 });
   }
-  const clean = sanitizeCapsProfile(capsProfile);
-  if (capsProfile !== null && !clean) {
+  if (capsProfile !== null && (typeof capsProfile !== "object" || Array.isArray(capsProfile))) {
     return NextResponse.json({ error: "capsProfile must be an object or null" }, { status: 400 });
   }
+  const clean = sanitizeCapsProfile(capsProfile);
   try {
     const updated = await setCustomModelCapsProfile({ providerAlias, id, type, capsProfile: clean });
     if (!updated) return NextResponse.json({ error: "Custom model not found" }, { status: 404 });

@@ -40,7 +40,15 @@ describe("custom model capability profile API", () => {
     expect(setCustomModelCapsProfile).toHaveBeenLastCalledWith({ ...key, type: "llm", capsProfile: null });
   });
 
-  it.each([{}, { ...key }, { ...key, id: [] }, { ...key, capsProfile: [] }, { ...key, type: "stt", capsProfile: null }, { ...key, providerAlias: "openai", capsProfile: null }])("rejects invalid payload %j", async (body) => {
+  it.each([
+    { profile: "auto", thinkingWire: "auto", overrides: {} },
+    { profile: "bogus", thinkingWire: "bogus" },
+  ])("clears the profile when no settings remain after sanitization: %j", async (capsProfile) => {
+    expect((await patch({ ...key, capsProfile })).status).toBe(200);
+    expect(setCustomModelCapsProfile).toHaveBeenCalledWith({ ...key, type: "llm", capsProfile: null });
+  });
+
+  it.each([{}, { ...key }, { ...key, id: [] }, ...[[], "auto", 1, false].map((capsProfile) => ({ ...key, capsProfile })), { ...key, type: "stt", capsProfile: null }, { ...key, providerAlias: "openai", capsProfile: null }])("rejects invalid payload %j", async (body) => {
     expect((await patch(body)).status).toBe(400);
     expect(setCustomModelCapsProfile).not.toHaveBeenCalled();
   });
