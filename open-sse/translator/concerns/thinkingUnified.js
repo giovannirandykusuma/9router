@@ -5,6 +5,7 @@
 import { getCapabilitiesForModel } from "../../providers/capabilities.js";
 import { getThinkingLevels } from "../../providers/thinkingLevels.js";
 import { PROVIDERS } from "../../providers/index.js";
+import { getCustomCapsEntry, resolveThinkingWireFormat } from "../../providers/customCaps.js";
 import { LEVEL_TO_BUDGET, budgetToLevel, effortToBudget, effortToThinkingLevel } from "./thinking.js";
 
 // Map a target wire-format to its native thinking format (when capability has none).
@@ -133,6 +134,11 @@ const isOpenAICompatibleNode = (provider) => String(provider || "").startsWith("
 
 function resolveFormat(targetFormat, model, provider) {
   if (targetFormat === "commandcode") return "commandcode";
+  // Admin-pinned thinking wire for a custom model (customCaps.js) beats every other source,
+  // except native-only formats, which cannot be sent on an OpenAI wire.
+  const wireFmt = resolveThinkingWireFormat(provider, model);
+  const openAIWire = targetFormat === "openai" || targetFormat === "openai-responses";
+  if (wireFmt && !(openAIWire && NATIVE_ONLY_FORMATS.has(wireFmt))) return wireFmt;
   // A multi-endpoint provider can declare, per transports[] entry, the thinking shape that
   // endpoint accepts. It wins over the model's thinkingFormat, which describes the Chat wire:
   // strict /responses upstreams (Meta, OpenCode Go) reject Chat-shaped reasoning_effort /
@@ -246,7 +252,14 @@ function ensureGeminiOutputFloor(body, floor, caps) {
 }
 
 // Strip every known thinking field from a body (used before re-applying / when unsupported).
-function stripAll(body) {
+// stripKwargs: also drop chat_template_kwargs.enable_thinking (vllm wire). Only for models
+// with a custom caps entry, so a client's own kwargs elsewhere still pass through untouched.
+function stripAll(body, stripKwargs = false) {
+  const kw = body.chat_template_kwargs;
+  if (stripKwargs && kw && typeof kw === "object" && !Array.isArray(kw)) {
+    delete kw.enable_thinking;
+    if (Object.keys(kw).length === 0) delete body.chat_template_kwargs;
+  }
   delete body.thinking;
   delete body.reasoning_effort;
   delete body.reasoning;
@@ -421,6 +434,22 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels, display, model = "",
       if (level) body.reasoning_effort = level;
       break;
     }
+    case "vllm": {
+      // vLLM chat templates (Qwen3 etc.) read chat_template_kwargs.enable_thinking;
+      // a top-level enable_thinking is ignored there, so never emit it.
+      const kw = body.chat_template_kwargs && typeof body.chat_template_kwargs === "object" && !Array.isArray(body.chat_template_kwargs)
+        ? { ...body.chat_template_kwargs }
+        : {};
+      if (none && canDisable) { kw.enable_thinking = false; body.chat_template_kwargs = kw; break; }
+      kw.enable_thinking = true;
+      body.chat_template_kwargs = kw;
+      const budget = toBudget(eff, caps.thinkingRange);
+      if (Number.isFinite(budget) && budget > 0) body.thinking_budget = budget;
+      break;
+    }
+    case "none":
+      // Admin chose to never send thinking fields (already stripped).
+      break;
     case "kiro":
       // Kiro thinking handled via system-tag injection in openai-to-kiro.js; no body field here.
       break;
@@ -457,12 +486,17 @@ export function applyThinking(targetFormat, model, body, provider = null, intent
   const cfg = override || intent || extractThinking(body);
   const caps = getCapabilitiesForModel(provider, cleanModel);
 
+  const hasCustomCaps = getCustomCapsEntry(provider, cleanModel) !== null;
+
   // Model cannot reason → strip any stray thinking fields.
   if (!caps.reasoning) {
-    stripAll(body);
+    stripAll(body, hasCustomCaps);
     return body;
   }
-  if (!cfg) return body;
+  if (!cfg) {
+    if (hasCustomCaps && resolveThinkingWireFormat(provider, cleanModel) === "none") stripAll(body, true);
+    return body;
+  }
 
   const fmt = resolveFormat(targetFormat, cleanModel, provider);
   const supportedLevels = getThinkingLevels(provider, cleanModel);
@@ -473,7 +507,7 @@ export function applyThinking(targetFormat, model, body, provider = null, intent
   // Some adaptive models accept disabled thinking only at a subset of effort
   // levels. Keep an explicit off preference there; higher effort must adapt.
   const disabled = body.thinking?.type === "disabled";
-  stripAll(body);
+  stripAll(body, hasCustomCaps);
   applyFormat(fmt, body, cfg, caps, supportedLevels, display, cleanModel, isOpenAICompatibleNode(provider));
   if (disabled && caps.thinkingOffEffortLevels?.includes(body.output_config?.effort)) {
     body.thinking = { type: "disabled" };

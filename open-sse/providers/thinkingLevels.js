@@ -32,6 +32,8 @@ const FORMAT_LEVELS = {
   hunyuan: L.base,
   step: L.base,
   nous: L.base,
+  vllm: L.base,     // custom-model wire: chat_template_kwargs.enable_thinking (+ thinking_budget)
+  none: ["none"],   // custom-model wire: never send thinking fields
 };
 
 const CODEX_GPT_5_6_LEVELS = ["none", "minimal", "low", "medium", "high", "xhigh", "max"];
