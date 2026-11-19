@@ -38,6 +38,7 @@
 import { matchPattern } from "./pricing.js";
 import { looksLikeVisionModel } from "./visionPatterns.js";
 import { resolveProviderAlias } from "../services/model.js";
+import { getCustomCapsEntry, applyCustomProfile } from "./customCaps.js";
 
 /**
  * Safe floor — every resolved result is merged over this so consumers
@@ -932,13 +933,12 @@ function resolveCapabilitiesForModel(provider, model) {
   return refine(null, provider, model);
 }
 
-/** Resolve registered capabilities and then apply an exact persisted override. */
+/** Resolve catalog capabilities, a compatible custom profile, then the exact context override. */
 export function getCapabilitiesForModel(provider, model) {
-  return applyContextWindowOverride(
-    resolveCapabilitiesForModel(provider, model),
-    provider,
-    model,
-  );
+  const detected = resolveCapabilitiesForModel(provider, model);
+  const custom = model ? getCustomCapsEntry(provider, model) : null;
+  const caps = custom ? applyCustomProfile(detected, custom, DEFAULT_CAPABILITIES) : detected;
+  return applyContextWindowOverride(caps, provider, model);
 }
 
 // Gemini 4 (Argon) drops sampling params and requires functionResponse-last merged user turns.
