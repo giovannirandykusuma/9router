@@ -32,6 +32,28 @@ describe("custom model capability profile API", () => {
     expect(getCustomCapsEntry(providerAlias, id)).toEqual(qwen);
   });
 
+  it("applies PATCH updates and clears across separately evaluated server bundles", async () => {
+    getCustomModels.mockResolvedValue([]);
+    await installCustomCapsSource();
+
+    // The production PATCH route and instrumentation can evaluate separate loader copies.
+    vi.resetModules();
+    const { PATCH: bundledPatch } = await import("@/app/api/models/custom/route.js");
+    const profile = { ...qwen, overrides: { contextWindow: 123456 } };
+    const update = (capsProfile) => bundledPatch({ json: async () => ({ ...key, capsProfile }) });
+    const readCaps = async () => (await (await GET()).json()).models
+      .find((model) => model.fullModel === `${providerAlias}/${id}`).caps;
+    getCustomModels.mockResolvedValue([{ ...key, capsProfile: profile }]);
+    expect((await update(profile)).status).toBe(200);
+    expect(getCustomCapsEntry(providerAlias, id)).toEqual(profile);
+    expect((await readCaps()).contextWindow).toBe(123456);
+
+    getCustomModels.mockResolvedValue([key]);
+    expect((await update(null)).status).toBe(200);
+    expect(getCustomCapsEntry(providerAlias, id)).toBeNull();
+    expect((await readCaps()).contextWindow).not.toBe(123456);
+  });
+
   it("normalizes unknown enums, drops invalid overrides, and supports clearing", async () => {
     const res = await patch({ ...key, capsProfile: { profile: "unknown", thinkingWire: "unknown", overrides: { contextWindow: -1, vision: true, extra: true } } });
     expect(res.status).toBe(200);
