@@ -53,6 +53,7 @@ export default {
     },
   },
   models: [
+    // GPT 6.2 needs a Codex client identity >= 0.166.0 (the backend rejects older versions).
     // Verified against the authenticated Codex catalog. Its ultra level requires
     // automatic delegation; keep gateway effort normalization (ultra -> max).
     { id: "gpt-6.2-sol", name: "GPT 6.2 Sol", responsesLite: true, thinkingLevels: GPT_6_LITE_THINKING_LEVELS },

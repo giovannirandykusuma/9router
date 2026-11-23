@@ -15,7 +15,7 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-async function status(latest = "0.5.119", build) {
+async function status(latest = "0.5.123", build) {
   if (build === undefined) delete process.env.APP_VERSION;
   else process.env.APP_VERSION = build;
   get.mockImplementation((_url, _options, callback) => {
@@ -36,24 +36,24 @@ async function status(latest = "0.5.119", build) {
 describe("app release and fork build version", () => {
   it("reports the fully integrated upstream release consistently in the dashboard and API", async () => {
     const { APP_CONFIG } = await import("../../src/shared/constants/config.js");
-    expect(pkg.version).toBe("0.5.119");
+    expect(pkg.version).toBe("0.5.123");
     expect(APP_CONFIG.version).toBe(pkg.version);
     expect(await status()).toEqual({
-      currentVersion: pkg.version, latestVersion: "0.5.119", hasUpdate: false, buildVersion: null,
+      currentVersion: pkg.version, latestVersion: "0.5.123", hasUpdate: false, buildVersion: null,
     });
   });
 
   it("exposes the exact build separately without treating it as a newer upstream release", async () => {
     const build = `${pkg.version}-fork-${"a".repeat(40)}`;
-    expect(await status("0.5.120", build)).toEqual({
-      currentVersion: pkg.version, latestVersion: "0.5.120", hasUpdate: true, buildVersion: build,
+    expect(await status("0.5.124", build)).toEqual({
+      currentVersion: pkg.version, latestVersion: "0.5.124", hasUpdate: true, buildVersion: build,
     });
     expect(get.mock.calls[0][0]).toBe("https://registry.npmjs.org/9router/latest");
   });
 
-  it.each(["unknown", "0.5.120-fork-" + "b".repeat(40), "0.5.119-fork-short", "<script>alert(1)</script>"])(
+  it.each(["unknown", "0.5.124-fork-" + "b".repeat(40), "0.5.123-fork-short", "<script>alert(1)</script>"])(
     "does not publish unverified or mismatched build metadata: %s", async (build) => {
-      expect((await status("0.5.119", build)).buildVersion).toBeNull();
+      expect((await status("0.5.123", build)).buildVersion).toBeNull();
     }
   );
 

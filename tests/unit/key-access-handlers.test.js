@@ -45,7 +45,7 @@ vi.mock("@/sse/services/tokenRefresh.js", () => ({
   updateProviderCredentials: vi.fn(),
 }));
 vi.mock("open-sse/handlers/chatCore.js", () => ({ handleChatCore: mocks.handleChatCore }));
-vi.mock("open-sse/handlers/systemoneCore.js", () => ({ handleSystemoneCore: mocks.handleSystemoneCore }));
+vi.mock("open-sse/handlers/systemoneCore.js", async (importOriginal) => ({ ...(await importOriginal()), handleSystemoneCore: mocks.handleSystemoneCore }));
 
 const { handleChat } = await import("../../src/sse/handlers/chat.js");
 const { handleEmbeddings } = await import("../../src/sse/handlers/embeddings.js");

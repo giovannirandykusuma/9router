@@ -10,6 +10,7 @@ import { promisify } from "util";
 import { getCombos } from "@/lib/localDb";
 import { getModelInfo } from "@/sse/services/model";
 import { getCapabilitiesForModel, aggregateComboCapabilities } from "open-sse/providers/capabilities.js";
+import { sanitizePiModelCaps } from "@/shared/utils/piModels";
 
 const execAsync = promisify(exec);
 
@@ -163,13 +164,20 @@ export async function POST(request) {
           caps = getCapabilitiesForModel(resolved.provider, resolved.model || id);
         }
       }
-      modelList.push({
+      const next = {
         ...merged,
         // Dashboard name === id is a placeholder, not an explicit rename.
         name: supplied.name && supplied.name !== id ? supplied.name : (previousModels.get(id)?.name || id),
         contextWindow: validLimit(merged.contextWindow) ? merged.contextWindow : caps.contextWindow,
         maxTokens: validLimit(merged.maxTokens) ? merged.maxTokens : caps.maxOutput,
-      });
+      };
+      // Capabilities are optional in models.json; values the schema does not
+      // accept are dropped rather than passed through.
+      delete next.input;
+      delete next.reasoning;
+      delete next.thinkingLevelMap;
+      Object.assign(next, sanitizePiModelCaps(merged));
+      modelList.push(next);
     }
 
     existing.providers["9router"] = {
